@@ -1,5 +1,3 @@
-version: "3.8"
-
 # Dev override: only infra services, backend/frontend run locally
 services:
   db:

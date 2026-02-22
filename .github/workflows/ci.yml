@@ -61,7 +61,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_URL: https://api.example.com
+          VITE_API_URL: https://openadeia.org
 
   # ── Validate Docker Compose ────────────────────────────────────────
   compose:

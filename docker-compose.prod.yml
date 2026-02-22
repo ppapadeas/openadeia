@@ -7,8 +7,6 @@
 #   REGISTRY         e.g. ghcr.io/youruser
 #   IMAGE_TAG        e.g. v1.2.3  (or "latest")
 
-version: "3.8"
-
 services:
   frontend:
     image: ${REGISTRY:-ghcr.io/youruser}/openadeia-frontend:${IMAGE_TAG:-latest}
