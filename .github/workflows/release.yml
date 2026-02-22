@@ -123,27 +123,27 @@ jobs:
             set -e
             cd /opt/openadeia
 
-            # Pull latest compose file
+            # Pull latest compose files from git
             git fetch origin main
-            git checkout origin/main -- docker-compose.yml
+            git checkout origin/main -- docker-compose.yml docker-compose.prod.yml
 
-            # Update image tags
+            # Set image tag and registry for prod overlay
             export IMAGE_TAG=${{ steps.tag.outputs.TAG }}
             export REGISTRY=ghcr.io/${{ github.repository_owner }}
 
-            # Pull new images
+            # Login to ghcr.io and pull new images
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose pull api frontend
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api frontend
 
-            # Rolling restart (no downtime)
-            docker compose up -d --no-deps api
+            # Rolling restart using prod overlay (no downtime)
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps api
             sleep 10
-            docker compose up -d --no-deps frontend
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps frontend
 
             # Run any new migrations
-            docker compose exec -T api npm run migrate
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api npm run migrate
 
             # Cleanup old images
             docker image prune -f
 
-            echo "✅ Deploy complete — $IMAGE_TAG"
+            echo "Deploy complete — $IMAGE_TAG"
