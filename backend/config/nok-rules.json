@@ -1,0 +1,114 @@
+{
+  "vod": {
+    "label": "Βεβαίωση Όρων Δόμησης",
+    "shortLabel": "ΒΟΔ",
+    "category": "info",
+    "color": "#3B82F6",
+    "nokArticles": ["Ν.4067/2012 Άρθρο 26"],
+    "requiredStudies": [],
+    "requiredDocuments": [
+      {"id": "topio", "label": "Τοπογραφικό Διάγραμμα", "signerRole": "surveyor"},
+      {"id": "kaek", "label": "Κωδικός ΚΑΕΚ Ακινήτου", "signerRole": null},
+      {"id": "title_deed", "label": "Τίτλος Ιδιοκτησίας", "signerRole": null},
+      {"id": "identity", "label": "Αστυνομική Ταυτότητα Ιδιοκτήτη", "signerRole": null},
+      {"id": "aitisi", "label": "Αίτηση (Έντυπο e-Άδειες)", "signerRole": "owner"}
+    ],
+    "requiredApprovals": ["ΥΔΟΜ"],
+    "workflowStages": ["init", "data_collection", "submission", "review", "approved"],
+    "estimatedDays": 15,
+    "fees": {"tee": true, "municipality": false, "efka": false}
+  },
+  "cat1": {
+    "label": "Έγκριση Εργασιών Δόμησης Μικρής Κλίμακας",
+    "shortLabel": "Κατ.1",
+    "category": "minor",
+    "color": "#F59E0B",
+    "nokArticles": ["Ν.4067/2012 Άρθρο 29", "Ν.4495/2017"],
+    "requiredStudies": [
+      {"id": "arch_cat1", "label": "Αρχιτεκτονική Μελέτη (απλοποιημένη)", "signerRole": "architect"}
+    ],
+    "requiredDocuments": [
+      {"id": "topio", "label": "Τοπογραφικό Διάγραμμα", "signerRole": "surveyor"},
+      {"id": "photos", "label": "Φωτογραφική Τεκμηρίωση", "signerRole": null},
+      {"id": "title_deed", "label": "Τίτλος Ιδιοκτησίας", "signerRole": null},
+      {"id": "identity", "label": "Αστυνομική Ταυτότητα Ιδιοκτήτη", "signerRole": null},
+      {"id": "tax_cert", "label": "Φορολογική Ενημερότητα", "signerRole": null},
+      {"id": "ika_cert", "label": "Ασφαλιστική Ενημερότητα ΕΦΚΑ", "signerRole": null},
+      {"id": "aitisi", "label": "Αίτηση (Έντυπο e-Άδειες)", "signerRole": "owner"},
+      {"id": "yp_dilosi", "label": "Υπεύθυνη Δήλωση Ιδιοκτήτη", "signerRole": "owner"}
+    ],
+    "requiredApprovals": ["ΥΔΟΜ"],
+    "workflowStages": ["init", "data_collection", "studies", "submission", "review", "approved"],
+    "estimatedDays": 30,
+    "fees": {"tee": true, "municipality": false, "efka": true}
+  },
+  "cat2": {
+    "label": "Οικοδομική Άδεια (Κατηγορία 2)",
+    "shortLabel": "Κατ.2",
+    "category": "major",
+    "color": "#EF4444",
+    "nokArticles": ["Ν.4067/2012 Άρθρα 3-7, 26-28", "Ν.4495/2017"],
+    "requiredStudies": [
+      {"id": "arch", "label": "Αρχιτεκτονική Μελέτη", "signerRole": "architect"},
+      {"id": "static", "label": "Στατική Μελέτη", "signerRole": "civil_eng"},
+      {"id": "mech", "label": "Η/Μ Μελέτη", "signerRole": "mech_eng"},
+      {"id": "energy", "label": "Ενεργειακή Μελέτη (ΚΕΝΑΚ)", "signerRole": "energy_eng"},
+      {"id": "passive_fire", "label": "Μελέτη Παθητικής Πυροπροστασίας", "signerRole": "fire_eng"}
+    ],
+    "requiredDocuments": [
+      {"id": "topio", "label": "Τοπογραφικό Διάγραμμα", "signerRole": "surveyor"},
+      {"id": "diag_kal", "label": "Διάγραμμα Κάλυψης", "signerRole": "architect"},
+      {"id": "title_deed", "label": "Τίτλος Ιδιοκτησίας", "signerRole": null},
+      {"id": "identity", "label": "Αστυνομική Ταυτότητα Ιδιοκτήτη", "signerRole": null},
+      {"id": "kaek", "label": "Κωδικός ΚΑΕΚ Ακινήτου", "signerRole": null},
+      {"id": "tax_cert", "label": "Φορολογική Ενημερότητα", "signerRole": null},
+      {"id": "ika_cert", "label": "Ασφαλιστική Ενημερότητα ΕΦΚΑ", "signerRole": null},
+      {"id": "symvasi", "label": "Σύμβαση Μηχανικού-Ιδιοκτήτη", "signerRole": "both"},
+      {"id": "amea", "label": "Μελέτη Προσβασιμότητας ΑμεΑ", "signerRole": "architect"},
+      {"id": "aitisi", "label": "Αίτηση (Έντυπο e-Άδειες)", "signerRole": "owner"},
+      {"id": "yp_dilosi", "label": "Υπεύθυνη Δήλωση Ιδιοκτήτη", "signerRole": "owner"},
+      {"id": "yp_eng", "label": "Υπεύθυνη Δήλωση Μηχανικού", "signerRole": "engineer"}
+    ],
+    "requiredApprovals": ["ΥΔΟΜ", "Πυροσβεστική", "Δασαρχείο (εφόσον)", "Αρχαιολογία (εφόσον)"],
+    "workflowStages": ["init", "data_collection", "studies", "signatures", "submission", "review", "approved"],
+    "estimatedDays": 60,
+    "fees": {"tee": true, "municipality": true, "efka": true}
+  },
+  "cat3": {
+    "label": "Οικοδομική Άδεια (Κατηγορία 3)",
+    "shortLabel": "Κατ.3",
+    "category": "complex",
+    "color": "#7C3AED",
+    "nokArticles": ["Ν.4067/2012", "Ν.4495/2017", "Ν.4759/2020"],
+    "requiredStudies": [
+      {"id": "arch", "label": "Αρχιτεκτονική Μελέτη", "signerRole": "architect"},
+      {"id": "static", "label": "Στατική Μελέτη", "signerRole": "civil_eng"},
+      {"id": "mech", "label": "Η/Μ Μελέτη", "signerRole": "mech_eng"},
+      {"id": "energy", "label": "Ενεργειακή Μελέτη (ΚΕΝΑΚ)", "signerRole": "energy_eng"},
+      {"id": "passive_fire", "label": "Μελέτη Παθητικής Πυροπροστασίας", "signerRole": "fire_eng"},
+      {"id": "active_fire", "label": "Μελέτη Ενεργητικής Πυροπροστασίας", "signerRole": "fire_eng"},
+      {"id": "env", "label": "Περιβαλλοντική Μελέτη", "signerRole": "env_eng"},
+      {"id": "acoustic", "label": "Ηχομόνωση - Ακουστική Μελέτη", "signerRole": "acoustic_eng"},
+      {"id": "geo", "label": "Γεωτεχνική Μελέτη", "signerRole": "geotechnical_eng"}
+    ],
+    "requiredDocuments": [
+      {"id": "topio", "label": "Τοπογραφικό Διάγραμμα", "signerRole": "surveyor"},
+      {"id": "diag_kal", "label": "Διάγραμμα Κάλυψης", "signerRole": "architect"},
+      {"id": "title_deed", "label": "Τίτλος Ιδιοκτησίας", "signerRole": null},
+      {"id": "identity", "label": "Αστυνομική Ταυτότητα Ιδιοκτήτη", "signerRole": null},
+      {"id": "kaek", "label": "Κωδικός ΚΑΕΚ Ακινήτου", "signerRole": null},
+      {"id": "tax_cert", "label": "Φορολογική Ενημερότητα", "signerRole": null},
+      {"id": "ika_cert", "label": "Ασφαλιστική Ενημερότητα ΕΦΚΑ", "signerRole": null},
+      {"id": "contracts", "label": "Εργολαβικά Συμφωνητικά", "signerRole": null},
+      {"id": "amea", "label": "Μελέτη Προσβασιμότητας ΑμεΑ", "signerRole": "architect"},
+      {"id": "ktimatologio", "label": "Πιστοποιητικό Κτηματολογίου", "signerRole": null},
+      {"id": "aitisi", "label": "Αίτηση (Έντυπο e-Άδειες)", "signerRole": "owner"},
+      {"id": "yp_dilosi", "label": "Υπεύθυνη Δήλωση Ιδιοκτήτη", "signerRole": "owner"},
+      {"id": "yp_eng", "label": "Υπεύθυνη Δήλωση Μηχανικού", "signerRole": "engineer"}
+    ],
+    "requiredApprovals": ["ΥΔΟΜ", "Πυροσβεστική", "Δασαρχείο", "Αρχαιολογία", "Συμβούλιο Αρχιτεκτονικής", "Περιβαλλοντική Αδειοδότηση"],
+    "workflowStages": ["init", "data_collection", "studies", "signatures", "submission", "review", "approved"],
+    "estimatedDays": 120,
+    "fees": {"tee": true, "municipality": true, "efka": true}
+  }
+}

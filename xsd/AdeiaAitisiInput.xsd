@@ -1,0 +1,477 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema id="AdeiaInput" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+ <xs:simpleType name="integer01Type">
+  <xs:restriction base="xs:integer">
+   <xs:enumeration value="1"/>
+   <xs:enumeration value="0"/>
+  </xs:restriction>
+ </xs:simpleType>
+ <xs:simpleType name="decimalGE0Type">
+  <xs:restriction base="xs:decimal">
+   <xs:minInclusive value="0.0"/>
+  </xs:restriction>
+ </xs:simpleType>
+ <!--fdate type: null or dd/mm/yyyy -->
+ <xs:simpleType name="fdate">
+    <xs:restriction base="xs:string">
+        <xs:pattern value="()|((0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[012])/(18|19|20)\d{2})"/>
+    </xs:restriction>
+ </xs:simpleType>
+ <xs:complexType name="AITISI_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="0" name="AITISI_AA" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="1" name="AITISI_TYPE" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="1" name="YD_ID" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="1" name="DIMOS_AA" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="1" name="AITISI_DESCR" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="1024"/>
+      <xs:minLength value="1"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="ADDR" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="128"/>
+      <xs:minLength value="1"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="ADDR_NUM_FROM" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="5"/>
+      <xs:minLength value="1"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" name="ADDR_NUM_TO" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="5"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="CITY" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="64"/>
+      <xs:minLength value="1"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="ZIP_CODE" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="0" name="ADDR_LOCATION" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="128"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" name="OT" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="20"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" name="KAEK" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="20"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" name="GIS_LOCATION" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="2048"/>
+      <xs:pattern value="([0-9]+\.[0-9]+ [0-9]+\.[0-9]+,){2,}[0-9]+\.[0-9]+ [0-9]+\.[0-9]+"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" name="COMMENTS" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="1024"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="ENTOS_SXEDIOU" maxOccurs="1"
+               type="xs:integer"/>
+   <xs:element minOccurs="0" name="MIX_PROJECT_AA" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="1" name="NATURAL_DISASTER_FLAG" maxOccurs="1"
+               type="integer01Type"/>
+   <!-- Aitisi Details -->
+   <xs:element name="EKDOSI" type="EKDOSI_TYPE" minOccurs="1" maxOccurs="1"/>
+   <xs:element name="AITISI_OWNER" type="AITISI_OWNER_TYPE" minOccurs="1"
+               maxOccurs="unbounded"/>
+   <xs:element name="AITISI_ENGINEER" type="AITISI_ENGINEER_TYPE" minOccurs="1"
+               maxOccurs="unbounded"/>
+   <xs:element name="AITISI_DOC_RIGHT" type="AITISI_DOC_RIGHT_TYPE"
+               minOccurs="0" maxOccurs="unbounded"/>
+   <xs:element name="AITISI_APPROVAL" type="AITISI_APPROVAL_TYPE" minOccurs="0"
+               maxOccurs="unbounded"/>
+   <!-- v 2.9.1 -->
+   <xs:element name="AITISI_APPROVAL_EXT" type="AITISI_APPROVAL_EXT_TYPE"
+               minOccurs="0" maxOccurs="unbounded"/>
+   <xs:element name="AITISI_PARKING" type="AITISI_PARKING_TYPE"
+               minOccurs="0" maxOccurs="unbounded"/>
+   <xs:element name="AITISI_PREV_PRAXI" type="AITISI_PREV_PRAXI_TYPE"
+               minOccurs="0" maxOccurs="unbounded"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="AITISI_APPROVAL_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="0" name="AR_EGRISIS">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="512"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" maxOccurs="1" name="ISSUER_TYPE"
+               type="xs:positiveInteger"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="ISSUER_DATA">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="128"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" maxOccurs="1" name="APPROVAL_TYPE"
+               type="xs:positiveInteger"/>
+   <xs:element minOccurs="0" name="TOTAL_AREA" type="decimalGE0Type"/>
+   <xs:element minOccurs="0" name="COMMENTS">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="255"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="AITISI_DOC_RIGHT_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="0" maxOccurs="1" name="AR_ETOS">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="32"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" maxOccurs="1" name="ISSUER_TYPE"
+               type="xs:positiveInteger"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="ISSUER_DATA">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="128"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" maxOccurs="1" name="DOC_TYPE"
+               type="xs:positiveInteger"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="AITISI_ENGINEER_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" maxOccurs="1" name="AMH"
+               type="xs:positiveInteger"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="EM" type="integer01Type"/>
+   <xs:element name="AITISI_ENGINEER_SUBTASK"
+               type="AITISI_ENGINEER_SUBTASK_TYPE" minOccurs="0"
+               maxOccurs="unbounded"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="AITISI_ENGINEER_SUBTASK_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" maxOccurs="1" name="SUBTASK_ID"
+               type="xs:positiveInteger"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="AITISI_OWNER_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" name="OWNER_TYPE" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="1" name="SURNAME" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="40"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="NAME" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="20"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="F_NAME" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="20"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" maxOccurs="1" name="M_NAME">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="20"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="RIGHT_TYPE" type="xs:positiveInteger"
+               maxOccurs="1"/>
+   <xs:element minOccurs="1" name="RIGHT_PERCENT" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="0.00001"/>
+      <xs:maxInclusive value="100"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="ADDRESS" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="64"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="CITY" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="32"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="ZIP_CODE" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="5"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" name="TELEPHONE" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:minLength value="10"/>
+      <xs:maxLength value="16"/>
+      <xs:pattern value="(\+)?([0-9]{10,15})"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" maxOccurs="1" name="MOBILE_PHONE">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="16"/>
+      <xs:pattern value="|(\+)?([0-9]{10,15})"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" maxOccurs="1" name="FAX">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="16"/>
+      <xs:pattern value="|(\+)?([0-9]{10,15})"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" maxOccurs="1" name="EMAIL">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="64"/>
+      <xs:pattern value="|[a-zA-Z0-9._%+-]+@([a-zA-Z0-9.-]+\.)+[a-zA-Z]{2,4}"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="AFM" minOccurs="0" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="10"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="AFM_EX" minOccurs="0" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="32"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="0" maxOccurs="1" name="ADT">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="8"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+  </xs:sequence>
+ </xs:complexType>
+ <!-- EKDOSI_TYPE-->
+ <xs:complexType name="EKDOSI_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" maxOccurs="1" name="EKDOSI_TYPE"
+               type="xs:positiveInteger"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="TOTAL_PLOT_AREA"
+               type="decimalGE0Type"/>
+   <xs:element minOccurs="0" maxOccurs="1" name="COMMENTS">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="2048"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" maxOccurs="1" name="ROOF_GARDEN_AREA"
+               type="decimalGE0Type"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="TOTAL_BUILD_VOLUME"
+               type="decimalGE0Type"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="NUM_OF_FLOORS"
+               type="xs:nonNegativeInteger"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="NUM_OF_OWNERSHIPS"
+               type="xs:nonNegativeInteger"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="NUM_OF_PARKINGS"
+               type="xs:nonNegativeInteger"/>
+   <xs:element minOccurs="0" maxOccurs="1" name="EKDOSI_CATEG"
+               type="xs:nonNegativeInteger"/>
+   <xs:element name="EKDOSI_ADD_SPECS" type="EKDOSI_ADD_SPECS_TYPE"
+               minOccurs="0" maxOccurs="unbounded"/>
+   <xs:element name="EKDOSI_BUILD_FLOOR" type="EKDOSI_BUILD_FLOOR_TYPE"
+               minOccurs="0" maxOccurs="unbounded"/>
+   <xs:element name="EKDOSI_DD" type="EKDOSI_DD_TYPE" minOccurs="15"
+               maxOccurs="15"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="EKDOSI_ADD_SPECS_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" maxOccurs="1" name="ADD_SPECS_TYPE"
+               type="xs:positiveInteger"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="EKDOSI_BUILD_FLOOR_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" maxOccurs="1" name="BUILD_DESCR">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="64"/>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element minOccurs="1" maxOccurs="1" name="FLOOR_ID" type="xs:integer"/>
+   <xs:element name="EKDOSI_BUILD_USAGE" type="EKDOSI_BUILD_USAGE_TYPE"
+               minOccurs="0" maxOccurs="unbounded"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="EKDOSI_BUILD_USAGE_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" maxOccurs="1" name="BUILD_USAGE"
+               type="xs:positiveInteger"/>
+   <xs:element minOccurs="0" name="TOTAL_BUILD_AREA" type="decimalGE0Type"/>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="EKDOSI_DD_TYPE">
+  <xs:sequence>
+   <xs:element minOccurs="1" maxOccurs="1" name="DD_ROW_TYPE"
+               type="xs:positiveInteger"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="ALLOWED_AREA"
+               type="decimalGE0Type"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="LEGALLY_EXISTING_AREA"
+               type="decimalGE0Type"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="LEGALIZED_AREA"
+               type="decimalGE0Type"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="REGULATED_AREA"
+               type="xs:double"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="TOBE_LEGAL_AREA"
+               type="xs:double"/>
+   <xs:element minOccurs="1" maxOccurs="1" name="NEW_AREA" type="xs:double"/>
+  </xs:sequence>
+ </xs:complexType>
+ <!-- v 2.9.1 -->
+ <xs:complexType name="AITISI_APPROVAL_EXT_TYPE">
+  <xs:sequence>
+   <xs:element name="APPROVAL_TYPE_EXT" type="xs:integer" minOccurs="1"
+               maxOccurs="1"></xs:element>
+   <xs:element name="ISSUER_DATA" minOccurs="1" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="128"></xs:maxLength>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="AA_PROTOCOL" minOccurs="1" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="16"></xs:maxLength>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="PROTOCOL_DATE" type="fdate" minOccurs="0" maxOccurs="1"></xs:element>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="AITISI_PARKING_TYPE">
+  <xs:sequence>
+   <xs:element name="AR_PRAXIS" minOccurs="1" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="32"></xs:maxLength>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="PRAXI_DATE" type="fdate" minOccurs="0" maxOccurs="1"></xs:element>
+   <xs:element name="ISSUER_DATA" minOccurs="1" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="128"></xs:maxLength>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="NUM_OF_PARKINGS" type="xs:positiveInteger" minOccurs="1"
+               maxOccurs="1"></xs:element>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:complexType name="AITISI_PREV_PRAXI_TYPE">
+  <xs:sequence>
+   <xs:element name="PREV_PRAXI_TYPE" type="xs:integer" minOccurs="1"
+               maxOccurs="1"></xs:element>
+   <xs:element name="AA_PRAXIS" minOccurs="1" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="32"></xs:maxLength>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="PROJECT_DESCR" minOccurs="1" maxOccurs="1">
+    <xs:simpleType>
+     <xs:restriction base="xs:string">
+      <xs:maxLength value="128"></xs:maxLength>
+     </xs:restriction>
+    </xs:simpleType>
+   </xs:element>
+   <xs:element name="PRAXI_DATE" type="fdate" minOccurs="0" maxOccurs="1"></xs:element>
+   <xs:element name="PRAXI_VALID_TO" type="fdate" minOccurs="0" maxOccurs="1"></xs:element>
+  </xs:sequence>
+ </xs:complexType>
+ <xs:element name="AITISI" type="AITISI_TYPE">
+  <xs:unique name="DD_ROW_TYPE_KEY">
+   <xs:selector xpath="./EKDOSI/EKDOSI_DD"/>
+   <xs:field xpath="DD_ROW_TYPE"/>
+  </xs:unique>
+  <xs:unique name="ADD_SPECS_TYPE_KEY">
+   <xs:selector xpath="./EKDOSI/EKDOSI_ADD_SPECS"/>
+   <xs:field xpath="ADD_SPECS_TYPE"/>
+  </xs:unique>
+  <xs:unique name="AMH_KEY">
+   <xs:selector xpath="./AITISI_ENGINEER"/>
+   <xs:field xpath="AMH"/>
+   <xs:field xpath="EM"/>
+  </xs:unique>
+ </xs:element>
+</xs:schema>

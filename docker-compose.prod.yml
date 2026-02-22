@@ -1,0 +1,48 @@
+# docker-compose.prod.yml — Production overrides
+# Uses pre-built images from ghcr.io instead of building locally.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required env vars (in .env):
+#   REGISTRY         e.g. ghcr.io/youruser
+#   IMAGE_TAG        e.g. v1.2.3  (or "latest")
+
+version: "3.8"
+
+services:
+  frontend:
+    image: ${REGISTRY:-ghcr.io/youruser}/openadeia-frontend:${IMAGE_TAG:-latest}
+    build: !reset null    # disable local build
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    image: ${REGISTRY:-ghcr.io/youruser}/openadeia-backend:${IMAGE_TAG:-latest}
+    build: !reset null
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    restart: always
+
+  minio:
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
