@@ -17,7 +17,7 @@ export async function up(knex) {
     // TEE member number (AMH from XSD AITISI_ENGINEER_TYPE)
     t.integer('amh').unique();
     t.string('keycloak_id', 255);
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
   });
 
   // ── clients (property owners, maps to AITISI_OWNER_TYPE) ───────────
@@ -44,7 +44,7 @@ export async function up(knex) {
     t.string('address', 64);
     t.string('city', 32);
     t.string('zip_code', 5);
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
   });
 
   // ── projects ────────────────────────────────────────────────────────
@@ -59,8 +59,8 @@ export async function up(knex) {
     t.integer('progress').defaultTo(0).checkBetween([0, 100]);
     t.uuid('client_id').references('id').inTable('clients');
     t.uuid('created_by').references('id').inTable('users');
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
-    t.timestampTz('updated_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
+    t.timestamp('updated_at').defaultTo(knex.fn.now());
     t.date('deadline');
     // TEE e-Adeies fields
     t.string('tee_permit_code', 50);    // κωδικός πράξης
@@ -106,7 +106,7 @@ export async function up(knex) {
     t.specificType('coordinates', 'GEOMETRY(Point, 4326)');
     // zoning info JSONB: artiotita, sd, kalypsi, ypsos, etc.
     t.jsonb('zoning_info');
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
   });
 
   // ── ekdosi (EKDOSI_TYPE — building specification) ───────────────────
@@ -133,7 +133,7 @@ export async function up(knex) {
     t.jsonb('add_specs').defaultTo('[]');
     // EKDOSI_BUILD_FLOOR: [{build_descr, floor_id, usages:[{build_usage, total_build_area}]}]
     t.jsonb('build_floors').defaultTo('[]');
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
   });
 
   // ── documents ───────────────────────────────────────────────────────
@@ -150,9 +150,9 @@ export async function up(knex) {
     t.string('file_hash', 64); // SHA-256
     t.string('mime_type', 100);
     t.string('signer_role', 30);
-    t.timestampTz('signed_at');
+    t.timestamp('signed_at');
     t.string('signature_ref', 255);
-    t.timestampTz('uploaded_at').defaultTo(knex.fn.now());
+    t.timestamp('uploaded_at').defaultTo(knex.fn.now());
     t.uuid('uploaded_by').references('id').inTable('users');
     t.text('notes');
   });
@@ -175,7 +175,7 @@ export async function up(knex) {
     t.integer('approval_type_ext');
     t.string('aa_protocol', 16);
     t.string('protocol_date', 10); // dd/mm/yyyy
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
   });
 
   // ── doc_rights (AITISI_DOC_RIGHT_TYPE) ──────────────────────────────
@@ -187,7 +187,7 @@ export async function up(knex) {
     t.integer('issuer_type').notNullable();
     t.string('issuer_data', 128);
     t.integer('doc_type').notNullable();
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
   });
 
   // ── prev_praxis (AITISI_PREV_PRAXI_TYPE) ───────────────────────────
@@ -201,7 +201,7 @@ export async function up(knex) {
     // PRAXI_DATE, PRAXI_VALID_TO (dd/mm/yyyy or null)
     t.string('praxi_date', 10);
     t.string('praxi_valid_to', 10);
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
   });
 
   // ── workflow_logs ────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ export async function up(knex) {
     t.string('from_stage', 30);
     t.string('to_stage', 30);
     t.uuid('user_id').references('id').inTable('users');
-    t.timestampTz('created_at').defaultTo(knex.fn.now());
+    t.timestamp('created_at').defaultTo(knex.fn.now());
     t.jsonb('metadata');
   });
 
@@ -229,8 +229,8 @@ export async function up(knex) {
     t.jsonb('attachments'); // [{name, minio_path, size}]
     t.string('message_id', 255);
     t.string('in_reply_to', 255);
-    t.timestampTz('sent_at').defaultTo(knex.fn.now());
-    t.timestampTz('read_at');
+    t.timestamp('sent_at').defaultTo(knex.fn.now());
+    t.timestamp('read_at');
   });
 
   // ── indexes ──────────────────────────────────────────────────────────
