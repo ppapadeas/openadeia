@@ -99,7 +99,7 @@ export default async function documentsRoute(fastify) {
     if (!doc) return reply.code(404).send({ error: 'Not found' });
 
     if (doc.file_path) {
-      try { await minioClient.removeObject(BUCKET, doc.file_path); } catch (_) {}
+      try { await minioClient.removeObject(BUCKET, doc.file_path); } catch (_e) { /* ignore — file may already be deleted */ }
     }
 
     await db('documents').where({ id: req.params.did }).del();
