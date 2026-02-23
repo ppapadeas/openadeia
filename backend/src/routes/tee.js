@@ -46,22 +46,19 @@ export default async function teeRoute(fastify) {
 
     const client = new TeeClient(user.tee_username, teePassword);
 
-    try {
-      await client.login();
-    } catch (err) {
-      // 422 not 401 — TEE portal auth failure is NOT the same as our session expiry.
-      // A 401 here would trigger the frontend auto-logout interceptor incorrectly.
-      if (err.teeDebug) {
-        req.log.warn({ teeDebug: err.teeDebug }, 'TEE login failed — OAM debug info');
-      }
-      return reply.code(422).send({ error: err.message });
-    }
-
+    // fetchMyApplications handles the full flow (SSO login + ADF scrape via headless browser).
+    // err.credentialError = true means wrong username/password → return 422.
+    // 422 not 401 — TEE portal auth failure is NOT the same as our session expiry.
+    // A 401 here would trigger the frontend auto-logout interceptor incorrectly.
     let applications;
     try {
       applications = await client.fetchMyApplications();
     } catch (err) {
-      return reply.code(502).send({ error: err.message });
+      if (err.teeDebug) {
+        req.log.warn({ teeDebug: err.teeDebug }, 'TEE login failed — OAM debug info');
+      }
+      const statusCode = err.credentialError ? 422 : 502;
+      return reply.code(statusCode).send({ error: err.message });
     }
 
     // Cross-reference with existing projects to mark already-imported ones

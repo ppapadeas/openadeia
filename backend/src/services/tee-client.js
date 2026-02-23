@@ -153,59 +153,118 @@ export class TeeClient {
     this._storeCookies(obarRes);
   }
 
-  // Fetch list of engineer's applications (after login).
-  // The TEE portal (services.tee.gr/adeia) is an Oracle ADF JSF application.
-  // It does not expose a standard REST API — all guessed REST paths return 404.
-  // The data is rendered via JavaScript (ADF PPR), so we scrape the authenticated
-  // main page HTML and look for any server-side-rendered permit rows.
+  // Fetch list of engineer's applications from the TEE e-Adeies portal.
+  //
+  // The portal (services.tee.gr/adeia) is an Oracle ADF 12c JSF application that
+  // renders all permit data via JavaScript (ADF PPR/XHR). There is no REST API.
+  // We use a headless Chromium browser (via playwright-core) to:
+  //   1. Navigate to the portal (OAM SSO redirects to login page)
+  //   2. Fill credentials and submit
+  //   3. Wait for ADF to finish loading the permit table
+  //   4. Extract rows from the fully-rendered DOM
+  //
+  // Throws err.credentialError = true when credentials are rejected by OAM.
   async fetchMyApplications() {
-    const TIMEOUT = 12_000; // 12 s per request — avoid indefinite hangs
-
-    // ── Step 1: scrape the authenticated ADF main page ──────────────
-    let mainHtml = '';
+    let chromium;
     try {
-      const res = await fetch(`${BASE_URL}/adeia/faces/main`, {
-        redirect: 'follow',
-        headers: this._reqHeaders({ Accept: 'text/html,*/*' }),
-        signal: AbortSignal.timeout(TIMEOUT),
+      ({ chromium } = await import('playwright-core'));
+    } catch {
+      throw new Error('Playwright δεν είναι διαθέσιμο στον server. Επικοινωνήστε με τη διαχείριση.');
+    }
+
+    const executablePath =
+      process.env.CHROMIUM_EXECUTABLE_PATH ||
+      '/usr/bin/chromium-browser';
+
+    let browser;
+    try {
+      browser = await chromium.launch({
+        executablePath,
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
       });
-      this._storeCookies(res);
-      if (res.ok) mainHtml = await res.text();
-    } catch { /* timeout or network error — fall through to REST attempt */ }
-
-    // ── Step 2: parse server-side rendered ADF table rows ──────────
-    // Oracle ADF renders visible table rows as <tr> in the initial HTML.
-    // Each row for a permit typically contains the permit code (αριθμός άδειας).
-    if (mainHtml) {
-      const rows = parseAdfPermitRows(mainHtml);
-      if (rows.length > 0) return rows;
+    } catch (e) {
+      throw new Error(`Αδυναμία εκκίνησης headless browser: ${e.message}`);
     }
 
-    // ── Step 3: try any JSON REST endpoint that might exist ─────────
-    const restCandidates = [
-      `${BASE_URL}/adeia/rest/v1/Aitiseis`,
-      `${BASE_URL}/adeia/rest/v2/Aitiseis`,
-      `${BASE_URL}/adeia/rest/latest/Aitiseis`,
-    ];
-    for (const url of restCandidates) {
-      try {
-        const res = await fetch(url, {
-          headers: this._reqHeaders({ Accept: 'application/json,*/*;q=0.5' }),
-          redirect: 'manual',
-          signal: AbortSignal.timeout(TIMEOUT),
-        });
-        if (res.status >= 300) continue;
-        if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
-          return normalizeApplicationList(await res.json());
+    try {
+      const context = await browser.newContext({ userAgent: USER_AGENT, locale: 'el-GR' });
+      const page    = await context.newPage();
+      page.setDefaultTimeout(30_000);
+
+      // Navigate to the ADF portal — OAM SSO will redirect to the login page
+      await page.goto(`${BASE_URL}/adeia/faces/main`, { waitUntil: 'domcontentloaded' });
+
+      // If we landed on the SSO login page, authenticate
+      if (page.url().includes('sso.tee.gr')) {
+        await page.fill('input[name="username"]', this.username);
+        await page.fill('input[name="password"]', this.password);
+        await Promise.all([
+          page.waitForURL(url => !url.includes('sso.tee.gr'), { timeout: 25_000 })
+            .catch(() => null), // resolve even if we time out; we check url below
+          page.press('input[name="password"]', 'Enter'),
+        ]);
+
+        // Still on SSO page → wrong credentials
+        if (page.url().includes('sso.tee.gr')) {
+          const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
+          err.credentialError = true;
+          throw err;
         }
-      } catch { continue; }
-    }
+      }
 
-    throw new Error(
-      'Η σύνδεση στο ΤΕΕ e-Adeies ήταν επιτυχής, αλλά δεν ήταν δυνατή η αυτόματη ' +
-      'ανάκτηση της λίστας αιτήσεων (το portal χρησιμοποιεί JavaScript για την ' +
-      'φόρτωση δεδομένων). Εισάγετε τις άδειές σας χειροκίνητα ή επικοινωνήστε μαζί μας.'
-    );
+      // Wait for the ADF application to fully render (all XHR complete)
+      await page.waitForLoadState('networkidle', { timeout: 35_000 });
+
+      // Extract permit rows from the rendered table DOM
+      const isPermitCode = (c) => /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
+
+      const rows = await page.evaluate(() => {
+        function isPermitCode(c) {
+          return /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
+        }
+        const results = [];
+        for (const tr of document.querySelectorAll('tr')) {
+          const cells = [...tr.querySelectorAll('td')]
+            .map(td => (td.innerText || '').trim())
+            .filter(Boolean);
+          if (cells.length < 2) continue;
+          if (!cells.some(isPermitCode)) continue;
+          results.push(cells);
+        }
+        return results;
+      });
+
+      if (rows.length === 0) {
+        throw new Error(
+          'Η σύνδεση στο ΤΕΕ e-Adeies ήταν επιτυχής, αλλά δεν βρέθηκαν αιτήσεις. ' +
+          'Εάν έχετε καταχωρημένες άδειες, επικοινωνήστε μαζί μας.'
+        );
+      }
+
+      return rows.map(cells => {
+        const code = cells.find(isPermitCode);
+        return {
+          tee_permit_code: code,
+          title: cells.find(c => c !== code && c.length > 5) || `Αδεια ΤΕΕ ${code}`,
+          aitisi_type_code: null,
+          yd_id: null, dimos_aa: null,
+          address: '', city: '', kaek: '',
+          tee_status: cells.find(c => /εκδ|εγκρ|ελεγχ|υποβολ|υπογρ/i.test(c)) || '',
+          tee_status_code: '',
+          tee_submission_date: null,
+          is_continuation: false,
+          _raw: cells,
+        };
+      });
+    } finally {
+      await browser.close();
+    }
   }
 
   async fetchApplicationDetails(teeCode) {
@@ -227,42 +286,6 @@ export class TeeClient {
     }
     return null;
   }
-}
-
-// ── Parse server-side rendered ADF table rows ─────────────────────
-// Oracle ADF renders the first visible rows as <tr> elements even before JS runs.
-// Rows for permits contain a numeric/alphanumeric permit code cell.
-function parseAdfPermitRows(html) {
-  const rows = [];
-  // Match <tr> elements that contain what looks like a permit code (digits + slashes)
-  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const cellRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-
-  for (const rowMatch of html.matchAll(rowRe)) {
-    const cells = [...rowMatch[1].matchAll(cellRe)].map(
-      m => m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').trim()
-    ).filter(Boolean);
-
-    if (cells.length < 2) continue;
-    // Heuristic: a permit row has a cell that looks like a TEE permit code
-    // e.g. "2024/12345" or a long numeric string
-    const codeCell = cells.find(c => /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c));
-    if (!codeCell) continue;
-
-    rows.push({
-      tee_permit_code: codeCell,
-      title: cells.find(c => c !== codeCell && c.length > 5) || `Αδεια ΤΕΕ ${codeCell}`,
-      aitisi_type_code: null,
-      yd_id: null, dimos_aa: null,
-      address: '', city: '', kaek: '',
-      tee_status: cells.find(c => /εκδ|εγκρ|ελεγχ|υποβολ|υπογρ/i.test(c)) || '',
-      tee_status_code: '',
-      tee_submission_date: null,
-      is_continuation: false,
-      _raw: cells,
-    });
-  }
-  return rows;
 }
 
 // ── Normalize TEE API responses to our schema ─────────────────────
