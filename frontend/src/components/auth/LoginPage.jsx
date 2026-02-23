@@ -40,7 +40,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo / Title */}
         <div className="text-center mb-8">
-          <div className="text-4xl font-bold tracking-tight mb-1">OpenAdeia</div>
+          <img src="/favicon.svg" alt="OpenAdeia" className="w-14 h-14 mx-auto mb-4" />
+          <div className="text-3xl font-bold tracking-tight mb-1">OpenAdeia</div>
           <div className="text-text-muted text-sm">Διαχείριση Αδειοδοτικών Φακέλων</div>
         </div>
 

@@ -28,9 +28,7 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-14 border-b border-border-subtle flex-shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-accent-blue flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-          OA
-        </div>
+        <img src="/favicon.svg" alt="OpenAdeia" className="w-8 h-8 flex-shrink-0" />
         {!sidebarCollapsed && (
           <div className="min-w-0">
             <div className="font-bold text-sm leading-tight truncate">OpenAdeia</div>
