@@ -225,6 +225,7 @@ export class TeeClient {
       const isPermitCode = (c) => /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
 
       const rows = await page.evaluate(() => {
+        /* global document -- this callback runs inside the browser, not Node.js */
         function isPermitCode(c) {
           return /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
         }
