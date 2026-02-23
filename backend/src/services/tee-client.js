@@ -125,13 +125,13 @@ export class TeeClient {
     });
     this._storeCookies(authRes);
 
-    // Authentication check: on success we should be redirected back to services.tee.gr
+    // Authentication check: on success, OAM redirects us back to services.tee.gr.
+    // On failure, the final URL stays on sso.tee.gr.
+    // We check ONLY for sso.tee.gr — do NOT check for /oam/ or "login" in the path,
+    // since Oracle OAM routes successfully-authenticated requests through /oam/ paths
+    // on services.tee.gr before landing on the actual page.
     const finalUrl = authRes.url || '';
-    if (
-      finalUrl.includes('sso.tee.gr') ||
-      finalUrl.includes('/oam/') ||
-      finalUrl.toLowerCase().includes('login')
-    ) {
+    if (!finalUrl || finalUrl.includes('sso.tee.gr')) {
       throw new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
     }
 

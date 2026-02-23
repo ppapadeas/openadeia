@@ -89,6 +89,18 @@ export default function Sidebar() {
         </button>
       </div>
 
+      {/* Version */}
+      {!sidebarCollapsed && (
+        <a
+          href="https://openadeia.org"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block px-4 py-1.5 text-[10px] text-text-muted hover:text-text-secondary border-t border-border-subtle transition-colors text-center"
+        >
+          openadeia.org · v{__APP_VERSION__}
+        </a>
+      )}
+
       {/* Toggle */}
       <button
         onClick={toggleSidebar}
