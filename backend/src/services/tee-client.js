@@ -125,17 +125,35 @@ export class TeeClient {
     });
     this._storeCookies(authRes);
 
-    // Authentication check: on success, OAM redirects us back to services.tee.gr.
-    // On failure, the final URL stays on sso.tee.gr.
-    // We check ONLY for sso.tee.gr — do NOT check for /oam/ or "login" in the path,
-    // since Oracle OAM routes successfully-authenticated requests through /oam/ paths
-    // on services.tee.gr before landing on the actual page.
+    // Oracle OAM authentication check.
+    //
+    // Two possible success paths:
+    //   A) Simple HTTP 302 redirect → fetch follows it → authRes.url lands on services.tee.gr
+    //   B) FORM POST binding: OAM returns 200 HTML with an auto-submitting <form action="…services.tee.gr…">
+    //      Node fetch does NOT auto-submit HTML forms, so authRes.url stays on sso.tee.gr
+    //      even on success. We must inspect the body.
+    //
+    // Failure: OAM returns the login page again with an error message (no services.tee.gr in body).
+
     const finalUrl = authRes.url || '';
-    if (!finalUrl || finalUrl.includes('sso.tee.gr')) {
-      throw new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
+    const responseText = await authRes.text();
+
+    // Path A: redirected to services.tee.gr
+    if (finalUrl.includes('services.tee.gr')) {
+      return { ok: true };
     }
 
-    return { ok: true };
+    // Path B: FORM POST binding — response body has a form pointing to services.tee.gr
+    if (responseText.includes('services.tee.gr')) {
+      return { ok: true };
+    }
+
+    // Failure: still on SSO — attach debug info as a non-enumerable property so
+    // the route handler can log it server-side without exposing it to the client.
+    const snippet = responseText.slice(0, 400).replace(/\s+/g, ' ');
+    const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
+    err.teeDebug = { finalUrl, bodySnippet: snippet };
+    throw err;
   }
 
   // Fetch list of engineer's applications (after login)
