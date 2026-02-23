@@ -132,56 +132,32 @@ describe('POST /api/tee/sync', () => {
 
   it('returns 422 (NOT 401) when TEE portal login fails', async () => {
     // This is the critical regression test.
-    // Before the fix, this returned 401 which would log the user out of OpenAdeia.
+    // fetchMyApplications() throws with err.credentialError = true when OAM
+    // rejects credentials. The route must return 422, never 401
+    // (a 401 would trigger the frontend auto-logout interceptor).
     mockChain.first.mockResolvedValueOnce({
       id: 1,
       tee_username: 'engineer@tee.gr',
       tee_password_enc: encryptTeePassword('wrong-password'),
     });
 
-    const token = app.jwt.sign({ id: 1 });
+    const credErr = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
+    credErr.credentialError = true;
 
-    // TEE portal rejects login
-    teeClientInstance = undefined;
+    const { TeeClient } = await import('../../src/services/tee-client.js');
+    TeeClient.mockImplementationOnce(() => ({
+      fetchMyApplications: vi.fn().mockRejectedValue(credErr),
+    }));
+
+    const token = app.jwt.sign({ id: 1 });
     const res = await app.inject({
       method: 'POST',
       url: '/api/tee/sync',
       headers: { authorization: `Bearer ${token}` },
     });
 
-    // After mock is instantiated, override login to fail
-    // (The TeeClient mock is set up to fail if loginFn throws)
-    // We need a fresh setup — the mock is instantiated inside the route handler
-    // Let's configure the mock constructor to return a failing client
-    const { TeeClient } = await import('../../src/services/tee-client.js');
-    TeeClient.mockImplementationOnce(() => ({
-      login: vi.fn().mockRejectedValue(new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies')),
-      fetchMyApplications: vi.fn(),
-    }));
-
-    const res2 = await app.inject({
-      method: 'POST',
-      url: '/api/tee/sync',
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    // Reset for the second call (which has the correct mock)
-    mockChain.first.mockResolvedValueOnce({
-      id: 1,
-      tee_username: 'engineer@tee.gr',
-      tee_password_enc: encryptTeePassword('wrong-password'),
-    });
-
-    const res3 = await app.inject({
-      method: 'POST',
-      url: '/api/tee/sync',
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    // The response from the third call should be 422 (not 401)
-    // Actually let's simplify this test with a single clean request
-    expect([422, 200]).toContain(res3.statusCode);
-    expect(res3.statusCode).not.toBe(401); // Must NEVER return 401 for TEE failures
+    expect(res.statusCode).toBe(422);
+    expect(res.statusCode).not.toBe(401); // Must NEVER return 401 for TEE failures
   });
 
   it('returns application list on success', async () => {
