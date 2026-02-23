@@ -172,14 +172,14 @@ export class TeeClient {
       throw new Error('Playwright δεν είναι διαθέσιμο στον server. Επικοινωνήστε με τη διαχείριση.');
     }
 
-    const executablePath =
-      process.env.CHROMIUM_EXECUTABLE_PATH ||
-      '/usr/bin/chromium-browser';
-
     let browser;
     try {
       browser = await chromium.launch({
-        executablePath,
+        // Use Playwright's bundled Chromium by default (version-matched, reliable).
+        // Set CHROMIUM_EXECUTABLE_PATH to override (e.g. for local dev without npm install playwright).
+        ...(process.env.CHROMIUM_EXECUTABLE_PATH
+          ? { executablePath: process.env.CHROMIUM_EXECUTABLE_PATH }
+          : {}),
         headless: true,
         args: [
           '--no-sandbox',

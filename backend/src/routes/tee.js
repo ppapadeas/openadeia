@@ -7,6 +7,7 @@
  * POST /api/tee/import/:teeCode — import a specific TEE application as a project
  */
 
+import * as Sentry from '@sentry/node';
 import db from '../config/database.js';
 import { decryptTeePassword } from './auth.js';
 import { TeeClient, teeStatusToStage, teeTypeCodeToPermitType } from '../services/tee-client.js';
@@ -56,6 +57,10 @@ export default async function teeRoute(fastify) {
     } catch (err) {
       if (err.teeDebug) {
         req.log.warn({ teeDebug: err.teeDebug }, 'TEE login failed — OAM debug info');
+      }
+      // Capture non-credential errors to Sentry so we can see what Playwright/TEE errors look like
+      if (!err.credentialError) {
+        Sentry.captureException(err, { extra: { teeDebug: err.teeDebug } });
       }
       const statusCode = err.credentialError ? 422 : 502;
       return reply.code(statusCode).send({ error: err.message });

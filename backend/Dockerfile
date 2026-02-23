@@ -1,20 +1,12 @@
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --production
 
-# Chromium for Playwright-based ADF portal scraping
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont
-
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
-COPY package.json ./
-RUN npm install --production
+# Install Playwright's version-matched Chromium + its system dependencies.
+# Using the bundled browser avoids mismatches with the Alpine/Debian system package.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx playwright install --with-deps chromium
 
 FROM base AS final
 COPY . .

@@ -1,5 +1,17 @@
 import 'dotenv/config';
+import * as Sentry from '@sentry/node';
 import { buildApp } from './app.js';
+
+// Init Sentry before anything else so it captures all errors.
+// No-op when SENTRY_DSN is not configured.
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'production',
+    release: process.env.GITHUB_SHA,
+    tracesSampleRate: 0.1,
+  });
+}
 
 const app = await buildApp();
 
