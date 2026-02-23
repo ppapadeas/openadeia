@@ -1,27 +1,35 @@
 /**
  * TEE e-Adeies portal client
- * Authenticates with https://eadeies.tee.gr and fetches the engineer's
- * existing permit applications.
  *
- * The portal uses cookie-based session auth. After POST /login we keep
- * the JSESSIONID / XSRF-TOKEN cookie and use it for subsequent calls.
+ * Authentication flow (Oracle OAM SSO):
+ *   1. GET https://services.tee.gr/adeia/faces/main
+ *      -> 302 to https://sso.tee.gr/oam/server/obrareq.cgi?encquery=...
+ *      -> collects OAMAuthnHintCookie + OAMRequestContext cookies
+ *   2. GET that SSO URL -> 200 HTML with login form, hidden input request_id
+ *   3. POST sso.tee.gr/oam/server/auth_cred_submit  { username, password, request_id }
+ *      -> success: 302 redirect back to services.tee.gr (finalUrl check)
+ *      -> failure: stays on sso.tee.gr (finalUrl still contains sso.tee.gr)
  */
 
-const BASE_URL = process.env.TEE_API_BASE || 'https://eadeies.tee.gr';
+const BASE_URL   = process.env.TEE_API_BASE || 'https://services.tee.gr';
+const SSO_URL    = process.env.TEE_SSO_BASE || 'https://sso.tee.gr';
+const USER_AGENT = 'OpenAdeia/1.2 (openadeia.org)';
 
-// ── Helpers ────────────────────────────────────────────────────────
+// ── Cookie helpers ─────────────────────────────────────────────────
 
 function parseCookies(headers) {
-  const raw = headers.get('set-cookie') || '';
   const cookies = {};
-  // Multiple Set-Cookie headers come concatenated with commas in some runtimes
-  // Use a simple split on ';' per cookie directive
-  for (const part of raw.split(/,(?=[^;]+=[^;]+)/)) {
-    const [pair] = part.trim().split(';');
+  // Node 18+ fetch: headers.getSetCookie() returns an array
+  const raw = typeof headers.getSetCookie === 'function'
+    ? headers.getSetCookie()
+    : [headers.get('set-cookie') || ''];
+
+  for (const header of raw) {
+    const [pair] = header.split(';');
     if (!pair) continue;
     const eqIdx = pair.indexOf('=');
     if (eqIdx === -1) continue;
-    const name = pair.slice(0, eqIdx).trim();
+    const name  = pair.slice(0, eqIdx).trim();
     const value = pair.slice(eqIdx + 1).trim();
     if (name) cookies[name] = value;
   }
@@ -32,119 +40,127 @@ function cookieHeader(cookies) {
   return Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-// ── TEE Client ─────────────────────────────────────────────────────
+// ── TeeClient ─────────────────────────────────────────────────────
 
 export class TeeClient {
   constructor(username, password) {
     this.username = username;
     this.password = password;
-    this.cookies = {};
-    this.csrfToken = null;
+    this.cookies  = {};
   }
 
-  _headers(extra = {}) {
+  _reqHeaders(extra = {}) {
     const h = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': 'OpenAdeia/1.1 (openadeia.org)',
+      'User-Agent': USER_AGENT,
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'el-GR,el;q=0.9,en;q=0.8',
       ...extra,
     };
     if (Object.keys(this.cookies).length) {
       h.Cookie = cookieHeader(this.cookies);
     }
-    if (this.csrfToken) {
-      h['X-XSRF-TOKEN'] = this.csrfToken;
-    }
     return h;
   }
 
-  _storeCookies(response) {
-    const incoming = parseCookies(response.headers);
-    Object.assign(this.cookies, incoming);
-    if (incoming['XSRF-TOKEN']) this.csrfToken = incoming['XSRF-TOKEN'];
+  _storeCookies(res) {
+    Object.assign(this.cookies, parseCookies(res.headers));
   }
 
-  async _fetch(path, options = {}) {
-    const url = `${BASE_URL}${path}`;
-    const res = await fetch(url, {
+  // Step 1+2: request engineer portal -> follow SSO redirect -> extract request_id
+  async _getSsoRequestId() {
+    // Don't follow the redirect automatically — we need the Location URL
+    const init = await fetch(`${BASE_URL}/adeia/faces/main`, {
+      redirect: 'manual',
+      headers: this._reqHeaders(),
+    });
+    this._storeCookies(init);
+
+    const ssoRedirectUrl = init.headers.get('location');
+    if (!ssoRedirectUrl) {
+      throw new Error('Αναμενόταν SSO redirect αλλά δεν ελήφθη. Δοκιμάστε ξανά.');
+    }
+
+    // Follow the SSO redirect to get the login form
+    const ssoPage = await fetch(ssoRedirectUrl, {
       redirect: 'follow',
-      ...options,
-      headers: this._headers(options.headers || {}),
+      headers: this._reqHeaders({ Referer: `${BASE_URL}/adeia/faces/main` }),
     });
-    this._storeCookies(res);
-    return res;
-  }
+    this._storeCookies(ssoPage);
 
-  // ── Step 1: get the login page to collect any initial CSRF token ──
-  async _primeSession() {
-    try {
-      await this._fetch('/login');
-    } catch {
-      // Ignore — just collecting cookies
+    const html = await ssoPage.text();
+
+    // Extract the hidden request_id field value
+    const match = html.match(/name=['"]request_id['"]\s+value=['"]([^'"]+)['"]/);
+    if (!match) {
+      // Save partial HTML for debugging
+      const preview = html.slice(0, 500).replace(/\s+/g, ' ');
+      throw new Error(`Δεν βρέθηκε request_id στη φόρμα SSO. Απόκριση: ${preview}`);
     }
+
+    return match[1];
   }
 
-  // ── Step 2: authenticate ──────────────────────────────────────────
+  // Step 3: submit credentials to SSO auth endpoint
   async login() {
-    await this._primeSession();
-
-    // Try JSON login (most modern portals)
-    const res = await this._fetch('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username: this.username, password: this.password }),
-    });
-
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}));
-      if (data.token) {
-        this.cookies['Authorization'] = `Bearer ${data.token}`;
-        this.bearerToken = data.token;
-      }
-      return { ok: true };
+    let requestId;
+    try {
+      requestId = await this._getSsoRequestId();
+    } catch (err) {
+      throw new Error(`Δεν ήταν δυνατή η επικοινωνία με το ΤΕΕ: ${err.message}`);
     }
 
-    // Fallback: form-encoded login (older portals)
-    const formRes = await this._fetch('/j_spring_security_check', {
+    const authRes = await fetch(`${SSO_URL}/oam/server/auth_cred_submit`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      redirect: 'follow',
+      headers: this._reqHeaders({
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: `${SSO_URL}/oam/server/obrareq.cgi`,
+        Origin: SSO_URL,
+      }),
       body: new URLSearchParams({
-        j_username: this.username,
-        j_password: this.password,
-        _spring_security_remember_me: 'on',
+        username:   this.username,
+        password:   this.password,
+        request_id: requestId,
       }).toString(),
     });
+    this._storeCookies(authRes);
 
-    // If we get a redirect away from /login, we're authenticated
-    const finalUrl = formRes.url || '';
-    if (!finalUrl.includes('/login')) {
-      return { ok: true };
+    // Authentication check: on success we should be redirected back to services.tee.gr
+    const finalUrl = authRes.url || '';
+    if (
+      finalUrl.includes('sso.tee.gr') ||
+      finalUrl.includes('/oam/') ||
+      finalUrl.toLowerCase().includes('login')
+    ) {
+      throw new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
     }
 
-    // Last attempt: username/password JSON with different endpoint
-    const alt = await this._fetch('/rest/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username: this.username, password: this.password }),
-    });
-
-    if (alt.ok) return { ok: true };
-
-    throw new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε το username/password.');
+    return { ok: true };
   }
 
-  // ── Step 3: fetch list of engineer's applications ────────────────
+  // Fetch list of engineer's applications (after login)
+  // The exact REST path for the ADF application needs verification with real credentials.
   async fetchMyApplications() {
-    const endpoints = [
-      '/api/myApps',
-      '/api/engineer/myApps',
-      '/api/apps/my',
-      '/rest/api/myApps',
-      '/api/aitiseis/mou',
-      '/api/engineer/applications',
+    const candidates = [
+      `${BASE_URL}/adeia/rest/Aitiseis`,
+      `${BASE_URL}/adeia/rest/MyAitiseis`,
+      `${BASE_URL}/adeia/rest/applications`,
+      `${BASE_URL}/adeia/rest/myapplications`,
+      `${BASE_URL}/adeia/faces/myAitiseis`,
+      `${BASE_URL}/adeia/faces/aitiseis`,
     ];
 
-    for (const ep of endpoints) {
+    for (const url of candidates) {
       try {
-        const res = await this._fetch(ep);
+        const res = await fetch(url, {
+          headers: this._reqHeaders({
+            Accept: 'application/json,text/html,*/*;q=0.8',
+          }),
+          redirect: 'manual', // redirect = session expired or wrong URL
+        });
+
+        if (res.status === 301 || res.status === 302) continue;
+
         if (res.ok) {
           const ct = res.headers.get('content-type') || '';
           if (ct.includes('application/json')) {
@@ -158,99 +174,80 @@ export class TeeClient {
     }
 
     throw new Error(
-      'Δεν ήταν δυνατή η ανάκτηση αιτήσεων από το ΤΕΕ e-Adeies. ' +
-      'Το API endpoint ενδέχεται να έχει αλλάξει.'
+      'Η ανάκτηση αιτήσεων από το ΤΕΕ e-Adeies δεν ήταν δυνατή. ' +
+      'Επικοινωνήστε μαζί μας αν το πρόβλημα επιμένει.'
     );
   }
 
-  // ── Step 4: fetch details of a single application ────────────────
   async fetchApplicationDetails(teeCode) {
-    const endpoints = [
-      `/api/myApps/${teeCode}`,
-      `/api/apps/${teeCode}`,
-      `/rest/api/apps/${teeCode}`,
+    const candidates = [
+      `${BASE_URL}/adeia/rest/Aitiseis/${teeCode}`,
+      `${BASE_URL}/adeia/rest/applications/${teeCode}`,
     ];
-
-    for (const ep of endpoints) {
+    for (const url of candidates) {
       try {
-        const res = await this._fetch(ep);
-        if (res.ok) {
-          const data = await res.json();
-          return normalizeApplication(data);
+        const res = await fetch(url, {
+          headers: this._reqHeaders({ Accept: 'application/json' }),
+          redirect: 'manual',
+        });
+        if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
+          return normalizeApplication(await res.json());
         }
-      } catch {
-        continue;
-      }
+      } catch { continue; }
     }
-
     return null;
   }
 }
 
 // ── Normalize TEE API responses to our schema ─────────────────────
-// These normalizers handle the most common TEE API response shapes.
-// The exact field names may need adjustment once the live API is confirmed.
 
 function normalizeApplicationList(data) {
-  // Handle array directly or wrapped in a property
   const items = Array.isArray(data) ? data
-    : (data.content || data.data || data.items || data.aitiseis || data.apps || []);
-
+    : (data.items || data.content || data.data || data.aitiseis || []);
   return items.map(normalizeApplication);
 }
 
 function normalizeApplication(item) {
-  // Map common TEE field names to our schema
   return {
-    // TEE permit code (κωδικός πράξης)
     tee_permit_code: String(
       item.codeAdeias || item.code_adeias || item.permitCode || item.aitisiCode ||
       item.code || item.id || ''
     ),
-    // Title / description
-    title: item.titleAdeias || item.title || item.perigrafi || item.descr ||
-           item.projectTitle || `Άδεια ${item.codeAdeias || item.id || ''}`,
-    // AITISI_TYPE code (integer)
+    title:
+      item.titleAdeias || item.title || item.perigrafi || item.descr ||
+      `Αδεια ΤΕΕ ${item.codeAdeias || item.id || ''}`,
     aitisi_type_code: Number(item.aitisiType || item.aitisi_type || item.typeCode || 0) || null,
-    // YD_ID (Υπηρεσία Δόμησης)
-    yd_id: Number(item.ydId || item.yd_id || item.ypiresiaDomisis || 0) || null,
-    // DIMOS_AA (municipality code)
-    dimos_aa: Number(item.dimosAa || item.dimos_aa || item.dimosId || 0) || null,
-    // Address fields
-    address: item.address || item.addr || item.dieuthinsi || '',
-    city: item.city || item.poli || item.dimos || '',
-    // KAEK
-    kaek: item.kaek || item.KAEK || '',
-    // Status/stage from TEE
-    tee_status: item.status || item.katastasi || item.statusDescr || '',
-    tee_status_code: item.statusCode || item.katastasiCode || '',
-    // Submission date
+    yd_id:    Number(item.ydId    || item.yd_id    || 0) || null,
+    dimos_aa: Number(item.dimosAa || item.dimos_aa || 0) || null,
+    address:  item.address || item.addr || item.dieuthinsi || '',
+    city:     item.city    || item.poli || item.dimos      || '',
+    kaek:     item.kaek    || item.KAEK || '',
+    tee_status:          item.status     || item.katastasi     || '',
+    tee_status_code:     item.statusCode || item.katastasiCode || '',
     tee_submission_date: item.submissionDate || item.dateSubmit || item.hmerominia || null,
-    // Is it a new act or continuation?
     is_continuation: Boolean(
       item.prevPraxis || item.prev_praxis || item.isContinuation ||
       (item.aitisiType && [2, 3, 4].includes(Number(item.aitisiType)))
     ),
-    // Raw data for reference
     _raw: item,
   };
 }
 
-// ── Map TEE status to our workflow stage ──────────────────────────
+// ── Map TEE status -> our workflow stage ──────────────────────────
 export function teeStatusToStage(teeStatus, teeStatusCode) {
-  const s = (teeStatus || '').toLowerCase();
+  // Use normalised (NFD) comparison to handle accented Greek correctly
+  const norm = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const s = norm(teeStatus);
   const c = String(teeStatusCode || '');
-
-  if (s.includes('εγκρίθ') || s.includes('εκδόθ') || c === '5') return 'approved';
-  if (s.includes('έλεγχ') || s.includes('review') || c === '4') return 'review';
+  if (s.includes('εγκρ') || s.includes('εκδο') || c === '5') return 'approved';
+  if (s.includes('ελεγχ')                       || c === '4') return 'review';
   if (s.includes('υποβολ') || s.includes('submit') || c === '3') return 'submission';
-  if (s.includes('υπογραφ') || c === '2') return 'signatures';
-  if (s.includes('μελέτ') || c === '1') return 'studies';
+  if (s.includes('υπογραφ')                     || c === '2') return 'signatures';
+  if (s.includes('μελετ')                       || c === '1') return 'studies';
   return 'data_collection';
 }
 
-// ── Map TEE aitisi_type_code to our permit type string ────────────
-// These are approximate mappings — adjust as real codes become known.
+// ── Map TEE aitisi_type_code -> our permit type ───────────────────
 export function teeTypeCodeToPermitType(aitisiTypeCode, isContinuation) {
   if (isContinuation) {
     const code = Number(aitisiTypeCode);
@@ -259,10 +256,10 @@ export function teeTypeCodeToPermitType(aitisiTypeCode, isContinuation) {
     return 'revision';
   }
   const code = Number(aitisiTypeCode);
-  if (code === 1) return 'new_building';
+  if (code === 1)               return 'new_building';
   if (code === 5 || code === 6) return 'minor_cat1';
   if (code === 7 || code === 8) return 'minor_cat2';
-  if (code === 9) return 'vod';
-  if (code === 10) return 'preapproval';
+  if (code === 9)               return 'vod';
+  if (code === 10)              return 'preapproval';
   return 'new_building';
 }

@@ -1,13 +1,15 @@
 # Dev override: only infra services, backend/frontend run locally
+# pull_policy: never — uses locally cached images (no internet pull needed)
 services:
   db:
     image: postgis/postgis:16-3.4-alpine
+    pull_policy: never
     environment:
       POSTGRES_DB: eadeies
       POSTGRES_USER: eadeies
       POSTGRES_PASSWORD: eadeies
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata_dev:/var/lib/postgresql/data
     healthcheck:
@@ -16,13 +18,9 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
   minio:
     image: minio/minio:latest
+    pull_policy: never
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -32,6 +30,15 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
+
+  # redis not available locally — BullMQ (email queue) will log connection
+  # errors but TEE sync, auth, and project routes work without it.
+  # Uncomment when redis:7-alpine is available in local Docker cache.
+  # redis:
+  #   image: redis:7-alpine
+  #   pull_policy: never
+  #   ports:
+  #     - "6379:6379"
 
 volumes:
   pgdata_dev:
