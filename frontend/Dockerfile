@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install
 COPY . .
+ARG GITHUB_SHA
+ENV GITHUB_SHA=$GITHUB_SHA
 RUN npm run build
 
 FROM nginx:alpine AS final

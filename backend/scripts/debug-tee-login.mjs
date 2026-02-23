@@ -49,7 +49,7 @@ function reqHeaders(extra = {}) {
   return h;
 }
 
-function dumpResponse(label, res, body) {
+function dumpResponse(label, res, body, fullBody = false) {
   console.log(`\n${'─'.repeat(60)}`);
   console.log(`[${label}]`);
   console.log(`  Status : ${res.status} ${res.statusText}`);
@@ -61,7 +61,7 @@ function dumpResponse(label, res, body) {
     console.log(`  Cookies: ${setCookie.join(' | ')}`);
   }
   if (body) {
-    const snippet = body.slice(0, 600).replace(/\s+/g, ' ');
+    const snippet = fullBody ? body : body.slice(0, 600).replace(/\s+/g, ' ');
     console.log(`  Body   : ${snippet}`);
   }
 }
@@ -127,7 +127,7 @@ const step3a = await fetch(`${SSO_URL}/oam/server/auth_cred_submit`, {
 Object.assign(cookies, parseCookies(step3a.headers));
 const body3a = await step3a.text();
 const location3a = step3a.headers.get('location');
-dumpResponse('Step 3a', step3a, body3a);
+dumpResponse('Step 3a', step3a, body3a, true);
 console.log(`  → Location header: ${location3a}`);
 
 // ── Step 3b: follow the redirect manually ──────────────────────────
@@ -144,8 +144,12 @@ if (location3a) {
   console.log(`  → Location header: ${location3b}`);
 
   if (location3b) {
+    // Resolve relative redirects against services.tee.gr
+    const absLocation3b = location3b.startsWith('http')
+      ? location3b
+      : `${BASE_URL}${location3b}`;
     console.log('\n=== Step 3c: Follow second redirect ===');
-    const step3c = await fetch(location3b, {
+    const step3c = await fetch(absLocation3b, {
       redirect: 'manual',
       headers: reqHeaders({ Referer: location3a }),
     });
@@ -161,11 +165,66 @@ if (location3a) {
 console.log('\n=== Analysis ===');
 console.log(`  Step 3a status    : ${step3a.status}`);
 console.log(`  Step 3a location  : ${location3a}`);
-if (location3a?.includes('services.tee.gr')) {
+
+const loginOk = location3a?.includes('services.tee.gr');
+if (loginOk) {
   console.log('\n✓ LOGIN SUCCESS — OAM issued 302 redirect to services.tee.gr');
 } else if (body3a.includes('services.tee.gr')) {
   console.log('\n✓ LOGIN SUCCESS — FORM POST binding, services.tee.gr in body');
 } else {
   console.log('\n✗ LOGIN FAILED — OAM did not redirect to services.tee.gr');
   console.log('  Cookies now set:', Object.keys(cookies).join(', '));
+  process.exit(1);
+}
+
+// ── Step 4: probe REST endpoints for applications ──────────────────
+console.log('\n=== Step 4: Probe REST/page endpoints for applications ===');
+console.log(`  Cookies carried: ${Object.keys(cookies).join(', ')}\n`);
+
+// First, fetch the main ADF page and extract any URLs it references
+const mainRes = await fetch(`${BASE_URL}/adeia/faces/main`, {
+  redirect: 'follow',
+  headers: reqHeaders({ Referer: location3a }),
+});
+Object.assign(cookies, parseCookies(mainRes.headers));
+const mainHtml = await mainRes.text();
+console.log(`\n  Main page: ${mainRes.status} ${mainRes.url} (${mainHtml.length} bytes)`);
+
+// Extract faces page references and any data/rest URLs from the HTML
+const facesPages = [...new Set([...mainHtml.matchAll(/\/adeia\/faces\/([^'"?&\s#]+)/g)].map(m => m[1]))];
+const dataUrls = [...new Set([...mainHtml.matchAll(/['"]([^'"]*\/adeia[^'"]*)['"]/g)].map(m => m[1]).filter(u => u.match(/rest|data|json|service|resource/i)))];
+console.log('  Faces pages referenced:', facesPages.slice(0, 10));
+console.log('  Data URLs found:', dataUrls.slice(0, 10));
+
+const probes = [
+  // ADF REST Framework standard paths
+  `${BASE_URL}/adeia/rest/latest/`,
+  `${BASE_URL}/adeia/rest/12.1.3/`,
+  `${BASE_URL}/adeia/rest/1.0/`,
+  `${BASE_URL}/adeia/resources/`,
+  // ADF faces sub-pages
+  ...facesPages.slice(0, 5).map(p => `${BASE_URL}/adeia/faces/${p}`),
+];
+
+for (const url of probes) {
+  try {
+    const r = await fetch(url, {
+      redirect: 'manual',
+      headers: {
+        'User-Agent': UA,
+        Accept: 'application/json,text/html,*/*;q=0.5',
+        'Accept-Language': 'el-GR,el;q=0.9,en;q=0.8',
+        Cookie: cookieHeader(),
+      },
+    });
+    const ct = r.headers.get('content-type') || '';
+    const loc = r.headers.get('location') || '';
+    const body = r.status !== 302 ? (await r.text()).slice(0, 200).replace(/\s+/g, ' ') : '';
+    console.log(`  [${r.status}] ${url}`);
+    if (loc)  console.log(`         → redirect: ${loc}`);
+    if (ct)   console.log(`         → content-type: ${ct}`);
+    if (body) console.log(`         → body: ${body}`);
+  } catch (e) {
+    console.log(`  [ERR] ${url} — ${e.message}`);
+  }
 }
