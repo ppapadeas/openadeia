@@ -49,7 +49,9 @@ export default async function teeRoute(fastify) {
     try {
       await client.login();
     } catch (err) {
-      return reply.code(401).send({ error: err.message });
+      // 422 not 401 — TEE portal auth failure is NOT the same as our session expiry.
+      // A 401 here would trigger the frontend auto-logout interceptor incorrectly.
+      return reply.code(422).send({ error: err.message });
     }
 
     let applications;

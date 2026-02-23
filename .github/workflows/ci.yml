@@ -9,7 +9,7 @@ on:
 jobs:
   # ── Backend ────────────────────────────────────────────────────────
   backend:
-    name: Backend — Lint & Check
+    name: Backend — Lint, Test & Check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,12 +31,18 @@ jobs:
       - name: Lint
         run: npm run lint --if-present
 
+      - name: Test
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-do-not-use-in-production
+
       - name: Check knexfile syntax
         run: node --input-type=module < <(echo "import './knexfile.js'") || true
 
   # ── Frontend ───────────────────────────────────────────────────────
   frontend:
-    name: Frontend — Lint & Build
+    name: Frontend — Lint, Test & Build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -57,6 +63,9 @@ jobs:
 
       - name: Lint
         run: npm run lint --if-present
+
+      - name: Test
+        run: npm test
 
       - name: Build
         run: npm run build
