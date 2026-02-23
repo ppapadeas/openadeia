@@ -153,57 +153,72 @@ export class TeeClient {
     this._storeCookies(obarRes);
   }
 
-  // Fetch list of engineer's applications (after login)
-  // The exact REST path for the ADF application needs verification with real credentials.
+  // Fetch list of engineer's applications (after login).
+  // The TEE portal (services.tee.gr/adeia) is an Oracle ADF JSF application.
+  // It does not expose a standard REST API — all guessed REST paths return 404.
+  // The data is rendered via JavaScript (ADF PPR), so we scrape the authenticated
+  // main page HTML and look for any server-side-rendered permit rows.
   async fetchMyApplications() {
-    const candidates = [
-      `${BASE_URL}/adeia/rest/Aitiseis`,
-      `${BASE_URL}/adeia/rest/MyAitiseis`,
-      `${BASE_URL}/adeia/rest/applications`,
-      `${BASE_URL}/adeia/rest/myapplications`,
-      `${BASE_URL}/adeia/faces/myAitiseis`,
-      `${BASE_URL}/adeia/faces/aitiseis`,
-    ];
+    const TIMEOUT = 12_000; // 12 s per request — avoid indefinite hangs
 
-    for (const url of candidates) {
+    // ── Step 1: scrape the authenticated ADF main page ──────────────
+    let mainHtml = '';
+    try {
+      const res = await fetch(`${BASE_URL}/adeia/faces/main`, {
+        redirect: 'follow',
+        headers: this._reqHeaders({ Accept: 'text/html,*/*' }),
+        signal: AbortSignal.timeout(TIMEOUT),
+      });
+      this._storeCookies(res);
+      if (res.ok) mainHtml = await res.text();
+    } catch { /* timeout or network error — fall through to REST attempt */ }
+
+    // ── Step 2: parse server-side rendered ADF table rows ──────────
+    // Oracle ADF renders visible table rows as <tr> in the initial HTML.
+    // Each row for a permit typically contains the permit code (αριθμός άδειας).
+    if (mainHtml) {
+      const rows = parseAdfPermitRows(mainHtml);
+      if (rows.length > 0) return rows;
+    }
+
+    // ── Step 3: try any JSON REST endpoint that might exist ─────────
+    const restCandidates = [
+      `${BASE_URL}/adeia/rest/v1/Aitiseis`,
+      `${BASE_URL}/adeia/rest/v2/Aitiseis`,
+      `${BASE_URL}/adeia/rest/latest/Aitiseis`,
+    ];
+    for (const url of restCandidates) {
       try {
         const res = await fetch(url, {
-          headers: this._reqHeaders({
-            Accept: 'application/json,text/html,*/*;q=0.8',
-          }),
-          redirect: 'manual', // redirect = session expired or wrong URL
+          headers: this._reqHeaders({ Accept: 'application/json,*/*;q=0.5' }),
+          redirect: 'manual',
+          signal: AbortSignal.timeout(TIMEOUT),
         });
-
-        if (res.status === 301 || res.status === 302) continue;
-
-        if (res.ok) {
-          const ct = res.headers.get('content-type') || '';
-          if (ct.includes('application/json')) {
-            const data = await res.json();
-            return normalizeApplicationList(data);
-          }
+        if (res.status >= 300) continue;
+        if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
+          return normalizeApplicationList(await res.json());
         }
-      } catch {
-        continue;
-      }
+      } catch { continue; }
     }
 
     throw new Error(
-      'Η ανάκτηση αιτήσεων από το ΤΕΕ e-Adeies δεν ήταν δυνατή. ' +
-      'Επικοινωνήστε μαζί μας αν το πρόβλημα επιμένει.'
+      'Η σύνδεση στο ΤΕΕ e-Adeies ήταν επιτυχής, αλλά δεν ήταν δυνατή η αυτόματη ' +
+      'ανάκτηση της λίστας αιτήσεων (το portal χρησιμοποιεί JavaScript για την ' +
+      'φόρτωση δεδομένων). Εισάγετε τις άδειές σας χειροκίνητα ή επικοινωνήστε μαζί μας.'
     );
   }
 
   async fetchApplicationDetails(teeCode) {
     const candidates = [
+      `${BASE_URL}/adeia/rest/v1/Aitiseis/${teeCode}`,
       `${BASE_URL}/adeia/rest/Aitiseis/${teeCode}`,
-      `${BASE_URL}/adeia/rest/applications/${teeCode}`,
     ];
     for (const url of candidates) {
       try {
         const res = await fetch(url, {
           headers: this._reqHeaders({ Accept: 'application/json' }),
           redirect: 'manual',
+          signal: AbortSignal.timeout(12_000),
         });
         if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
           return normalizeApplication(await res.json());
@@ -212,6 +227,42 @@ export class TeeClient {
     }
     return null;
   }
+}
+
+// ── Parse server-side rendered ADF table rows ─────────────────────
+// Oracle ADF renders the first visible rows as <tr> elements even before JS runs.
+// Rows for permits contain a numeric/alphanumeric permit code cell.
+function parseAdfPermitRows(html) {
+  const rows = [];
+  // Match <tr> elements that contain what looks like a permit code (digits + slashes)
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const cellRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+
+  for (const rowMatch of html.matchAll(rowRe)) {
+    const cells = [...rowMatch[1].matchAll(cellRe)].map(
+      m => m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').trim()
+    ).filter(Boolean);
+
+    if (cells.length < 2) continue;
+    // Heuristic: a permit row has a cell that looks like a TEE permit code
+    // e.g. "2024/12345" or a long numeric string
+    const codeCell = cells.find(c => /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c));
+    if (!codeCell) continue;
+
+    rows.push({
+      tee_permit_code: codeCell,
+      title: cells.find(c => c !== codeCell && c.length > 5) || `Αδεια ΤΕΕ ${codeCell}`,
+      aitisi_type_code: null,
+      yd_id: null, dimos_aa: null,
+      address: '', city: '', kaek: '',
+      tee_status: cells.find(c => /εκδ|εγκρ|ελεγχ|υποβολ|υπογρ/i.test(c)) || '',
+      tee_status_code: '',
+      tee_submission_date: null,
+      is_continuation: false,
+      _raw: cells,
+    });
+  }
+  return rows;
 }
 
 // ── Normalize TEE API responses to our schema ─────────────────────
