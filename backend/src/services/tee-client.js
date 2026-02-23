@@ -97,7 +97,12 @@ export class TeeClient {
       throw new Error(`Δεν βρέθηκε request_id στη φόρμα SSO. Απόκριση: ${preview}`);
     }
 
-    return match[1];
+    // OAM HTML-encodes the value (e.g. &#45; → -). Decode before use.
+    return match[1]
+      .replace(/&#(\d+);/g,    (_, n) => String.fromCharCode(parseInt(n, 10)))
+      .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
   }
 
   // Step 3: submit credentials to SSO auth endpoint
@@ -109,9 +114,12 @@ export class TeeClient {
       throw new Error(`Δεν ήταν δυνατή η επικοινωνία με το ΤΕΕ: ${err.message}`);
     }
 
+    // Use redirect:manual so we can carry our managed cookies through each hop.
+    // With redirect:follow, Node fetch doesn't send our Cookie headers on the
+    // intermediate requests, so the session cookie set by obrar.cgi gets lost.
     const authRes = await fetch(`${SSO_URL}/oam/server/auth_cred_submit`, {
       method: 'POST',
-      redirect: 'follow',
+      redirect: 'manual',
       headers: this._reqHeaders({
         'Content-Type': 'application/x-www-form-urlencoded',
         Referer: `${SSO_URL}/oam/server/obrareq.cgi`,
@@ -125,35 +133,24 @@ export class TeeClient {
     });
     this._storeCookies(authRes);
 
-    // Oracle OAM authentication check.
-    //
-    // Two possible success paths:
-    //   A) Simple HTTP 302 redirect → fetch follows it → authRes.url lands on services.tee.gr
-    //   B) FORM POST binding: OAM returns 200 HTML with an auto-submitting <form action="…services.tee.gr…">
-    //      Node fetch does NOT auto-submit HTML forms, so authRes.url stays on sso.tee.gr
-    //      even on success. We must inspect the body.
-    //
-    // Failure: OAM returns the login page again with an error message (no services.tee.gr in body).
-
-    const finalUrl = authRes.url || '';
-    const responseText = await authRes.text();
-
-    // Path A: redirected to services.tee.gr
-    if (finalUrl.includes('services.tee.gr')) {
-      return { ok: true };
+    // OAM success: 302 → services.tee.gr/obrar.cgi?encreply=...
+    // OAM failure: 200 → login page with error message (wrong credentials)
+    const obarLocation = authRes.headers.get('location') || '';
+    if (!obarLocation.includes('services.tee.gr')) {
+      const body = await authRes.text();
+      const snippet = body.slice(0, 400).replace(/\s+/g, ' ');
+      const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
+      err.teeDebug = { status: authRes.status, location: obarLocation, bodySnippet: snippet };
+      throw err;
     }
 
-    // Path B: FORM POST binding — response body has a form pointing to services.tee.gr
-    if (responseText.includes('services.tee.gr')) {
-      return { ok: true };
-    }
-
-    // Failure: still on SSO — attach debug info as a non-enumerable property so
-    // the route handler can log it server-side without exposing it to the client.
-    const snippet = responseText.slice(0, 400).replace(/\s+/g, ' ');
-    const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
-    err.teeDebug = { finalUrl, bodySnippet: snippet };
-    throw err;
+    // Follow obrar.cgi manually — it sets the services.tee.gr session cookie.
+    // We don't need to follow further; we now hold the authenticated session.
+    const obarRes = await fetch(obarLocation, {
+      redirect: 'manual',
+      headers: this._reqHeaders({ Referer: `${SSO_URL}/oam/server/auth_cred_submit` }),
+    });
+    this._storeCookies(obarRes);
   }
 
   // Fetch list of engineer's applications (after login)
