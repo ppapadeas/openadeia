@@ -1,8 +1,22 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { readFileSync } from 'fs';
+import { execSync } from 'child_process';
 
-const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
+function getGitInfo() {
+  try {
+    const sha = (process.env.GITHUB_SHA || execSync('git rev-parse HEAD').toString()).trim();
+    const short = sha.slice(0, 7);
+    const rawRemote = execSync('git remote get-url origin').toString().trim();
+    const repoUrl = rawRemote
+      .replace(/\.git$/, '')
+      .replace(/^git@github\.com:/, 'https://github.com/');
+    return { short, commitUrl: `${repoUrl}/commit/${sha}` };
+  } catch {
+    return { short: 'dev', commitUrl: 'https://github.com/ppapadeas/openadeia' };
+  }
+}
+
+const git = getGitInfo();
 
 export default defineConfig({
   plugins: [react()],
@@ -16,7 +30,8 @@ export default defineConfig({
     },
   },
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __GIT_COMMIT__: JSON.stringify(git.short),
+    __GIT_COMMIT_URL__: JSON.stringify(git.commitUrl),
   },
   build: {
     outDir: 'dist',

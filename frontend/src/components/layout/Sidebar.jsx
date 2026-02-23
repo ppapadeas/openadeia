@@ -89,15 +89,15 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Version */}
+      {/* Commit */}
       {!sidebarCollapsed && (
         <a
-          href="https://openadeia.org"
+          href={__GIT_COMMIT_URL__}
           target="_blank"
           rel="noopener noreferrer"
-          className="block px-4 py-1.5 text-[10px] text-text-muted hover:text-text-secondary border-t border-border-subtle transition-colors text-center"
+          className="block px-4 py-1.5 text-[10px] text-text-muted hover:text-text-secondary border-t border-border-subtle transition-colors text-center font-mono"
         >
-          openadeia.org · v{__APP_VERSION__}
+          {__GIT_COMMIT__}
         </a>
       )}
 
