@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { searchApi } from '../../api/projects.js';
+import useAppStore from '../../store/useAppStore.js';
 
 export default function Header() {
   const [q, setQ] = useState('');
   const [results, setResults] = useState(null);
   const navigate = useNavigate();
+  const user = useAppStore((s) => s.user);
+
+  const initials = user?.name
+    ? user.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+    : '??';
 
   const handleSearch = async (val) => {
     setQ(val);
@@ -50,11 +56,18 @@ export default function Header() {
         )}
       </div>
 
-      {/* Actions */}
+      {/* User */}
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center text-accent-blue font-bold text-sm">
-          ΠΠ
-        </div>
+        {user?.amh && (
+          <span className="text-xs text-text-muted font-mono">ΑΜΗ {user.amh}</span>
+        )}
+        <button
+          onClick={() => navigate('/profile')}
+          className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center text-accent-blue font-bold text-sm hover:bg-accent-blue/30 transition-colors"
+          title={user?.name || 'Προφίλ'}
+        >
+          {initials}
+        </button>
       </div>
     </header>
   );

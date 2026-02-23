@@ -44,3 +44,10 @@ export const clientsApi = {
 export const searchApi = {
   search: (q) => api.get('/api/search', { params: { q } }),
 };
+
+export const authApi = {
+  register: (data) => api.post('/api/auth/register', data),
+  login: (data) => api.post('/api/auth/login', data),
+  me: () => api.get('/api/auth/me'),
+  updateProfile: (data) => api.patch('/api/auth/profile', data),
+};

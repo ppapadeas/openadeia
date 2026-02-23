@@ -2,19 +2,35 @@ import { z } from 'zod';
 
 // ── Reusable atoms ─────────────────────────────────────────────────
 const uuid = z.string().uuid();
-const permitType = z.enum(['vod', 'cat1', 'cat2', 'cat3']);
+
+// Correct permit type codes matching TEE e-Adeies system
+// Top-level distinction: νέα πράξη vs σε συνέχεια (captured by is_continuation)
+const permitType = z.enum([
+  // Νέα Πράξη (new acts — is_continuation: false)
+  'new_building',   // Νέα Οικοδομική Άδεια
+  'minor_cat1',     // Έγκριση Εργασιών Δόμησης Κατ.1
+  'minor_cat2',     // Έγκριση Εργασιών Δόμησης Κατ.2
+  'vod',            // Βεβαίωση Όρων Δόμησης
+  'preapproval',    // Προέγκριση
+  // Σε Συνέχεια (continuations — is_continuation: true)
+  'revision',       // Αναθεώρηση Άδειας
+  'revision_ext',   // Αναθεώρηση με Επέκταση
+  'file_update',    // Ενημέρωση Φακέλου
+]);
+
 const docStatus = z.enum(['pending', 'uploaded', 'signed', 'rejected']);
 const projectStage = z.enum([
   'init', 'data_collection', 'studies', 'signatures', 'submission', 'review', 'approved',
 ]);
 // XSD fdate: dd/mm/yyyy or empty
-const fdate = z.string().regex(/^((0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[012])\/(18|19|20)\d{2})?$/).optional();
+const _fdate = z.string().regex(/^((0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[012])\/(18|19|20)\d{2})?$/).optional();
 // XSD phone pattern
-const phone = z.string().regex(/^(\+)?([0-9]{10,15})$/).optional();
+const _phone = z.string().regex(/^(\+)?([0-9]{10,15})$/).optional();
 
 // ── Project schemas ────────────────────────────────────────────────
 export const createProjectSchema = z.object({
   type: permitType,
+  is_continuation: z.boolean().optional().default(false),
   title: z.string().min(1).max(255),
   client_id: uuid.optional(),
   aitisi_type_code: z.number().int().positive().optional(),
@@ -83,6 +99,28 @@ export const sendEmailSchema = z.object({
   subject: z.string().min(1).max(500),
   body: z.string().min(1),
   attachmentDocIds: z.array(uuid).optional(),
+});
+
+// ── Auth schemas ───────────────────────────────────────────────────
+export const registerSchema = z.object({
+  email: z.string().email().max(255),
+  name: z.string().min(2).max(255),
+  password: z.string().min(8).max(128),
+  amh: z.number().int().positive().optional(),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export const profileUpdateSchema = z.object({
+  name: z.string().min(2).max(255).optional(),
+  amh: z.number().int().positive().nullable().optional(),
+  tee_username: z.string().max(100).nullable().optional(),
+  tee_password: z.string().max(255).nullable().optional(),
+  current_password: z.string().optional(),
+  new_password: z.string().min(8).max(128).optional(),
 });
 
 // ── Fastify validation helper ──────────────────────────────────────

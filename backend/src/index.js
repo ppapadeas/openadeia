@@ -5,6 +5,7 @@ import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 
+import authRoute from './routes/auth.js';
 import projectsRoute from './routes/projects.js';
 import documentsRoute from './routes/documents.js';
 import studiesRoute from './routes/studies.js';
@@ -42,7 +43,17 @@ await app.register(rateLimit, {
   timeWindow: '1 minute',
 });
 
+// ── JWT authenticate decorator ───────────────────────────────────────
+app.decorate('authenticate', async (request, reply) => {
+  try {
+    await request.jwtVerify();
+  } catch (err) {
+    reply.code(401).send({ error: 'Δεν είστε συνδεδεμένος', detail: err.message });
+  }
+});
+
 // ── Routes ──────────────────────────────────────────────────────────
+await app.register(authRoute, { prefix: '/api/auth' });
 await app.register(projectsRoute, { prefix: '/api/projects' });
 await app.register(documentsRoute, { prefix: '/api/projects' });
 await app.register(studiesRoute, { prefix: '/api/projects' });

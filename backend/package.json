@@ -28,6 +28,7 @@
     "nodemailer": "^6.9.13",
     "pg": "^8.11.5",
     "pino-pretty": "^11.0.0",
+    "bcryptjs": "^2.4.3",
     "zod": "^3.22.4"
   },
   "devDependencies": {

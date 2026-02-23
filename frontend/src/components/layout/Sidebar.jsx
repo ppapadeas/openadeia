@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore.js';
 
 const NAV = [
@@ -8,7 +8,18 @@ const NAV = [
 ];
 
 export default function Sidebar() {
-  const { sidebarCollapsed, toggleSidebar } = useAppStore();
+  const { sidebarCollapsed, toggleSidebar, logout, user } = useAppStore();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
+
+  // Initials from user name
+  const initials = user?.name
+    ? user.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+    : '??';
 
   return (
     <aside
@@ -46,6 +57,37 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* User / Profile / Logout */}
+      <div className="border-t border-border-subtle flex-shrink-0">
+        <NavLink to="/profile"
+          className={({ isActive }) =>
+            `flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+              isActive ? 'text-accent-blue' : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
+            }`
+          }
+          title={sidebarCollapsed ? (user?.name || 'Προφίλ') : undefined}
+        >
+          <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center text-accent-blue font-bold text-xs flex-shrink-0">
+            {initials}
+          </div>
+          {!sidebarCollapsed && (
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium truncate">{user?.name || 'Χρήστης'}</div>
+              <div className="text-[10px] text-text-muted truncate">Ρυθμίσεις & Προφίλ</div>
+            </div>
+          )}
+        </NavLink>
+
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-text-muted hover:text-red-400 hover:bg-red-500/5 transition-colors"
+          title={sidebarCollapsed ? 'Αποσύνδεση' : undefined}
+        >
+          <span className="text-base flex-shrink-0">🚪</span>
+          {!sidebarCollapsed && <span>Αποσύνδεση</span>}
+        </button>
+      </div>
 
       {/* Toggle */}
       <button

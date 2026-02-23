@@ -1,9 +1,20 @@
+// ── Permit type taxonomy (correct TEE e-Adeies categories) ─────────
+// Top-level distinction: νέα πράξη (is_continuation=false) vs σε συνέχεια (is_continuation=true)
 export const PERMIT_TYPES = {
-  vod:  { label: 'Βεβαίωση Όρων Δόμησης', shortLabel: 'ΒΟΔ',    color: '#3B82F6' },
-  cat1: { label: 'Κατ. 1 — Μικρής Κλίμακας',   shortLabel: 'Κατ.1',  color: '#F59E0B' },
-  cat2: { label: 'Κατ. 2 — Οικοδομική Άδεια',  shortLabel: 'Κατ.2',  color: '#EF4444' },
-  cat3: { label: 'Κατ. 3 — Μεγάλης Κλίμακας',  shortLabel: 'Κατ.3',  color: '#7C3AED' },
+  // ── Νέα Πράξη ────────────────────────────────────────────────────
+  new_building: { label: 'Νέα Οικοδομική Άδεια',           shortLabel: 'Νέα Άδεια',    color: '#EF4444', is_continuation: false },
+  minor_cat1:   { label: 'Έγκριση Εργασιών Δόμησης Κατ.1', shortLabel: 'Κατ.1',        color: '#10B981', is_continuation: false },
+  minor_cat2:   { label: 'Έγκριση Εργασιών Δόμησης Κατ.2', shortLabel: 'Κατ.2',        color: '#8B5CF6', is_continuation: false },
+  vod:          { label: 'Βεβαίωση Όρων Δόμησης',           shortLabel: 'ΒΟΔ',          color: '#3B82F6', is_continuation: false },
+  preapproval:  { label: 'Προέγκριση Οικοδομικής Άδειας',  shortLabel: 'Προέγκριση',   color: '#F59E0B', is_continuation: false },
+  // ── Σε Συνέχεια ──────────────────────────────────────────────────
+  revision:     { label: 'Αναθεώρηση Οικοδομικής Άδειας',  shortLabel: 'Αναθεώρηση',   color: '#F97316', is_continuation: true  },
+  revision_ext: { label: 'Αναθεώρηση με Επέκταση',          shortLabel: 'Αναθ.+Επέκτ.', color: '#EC4899', is_continuation: true  },
+  file_update:  { label: 'Ενημέρωση Φακέλου',               shortLabel: 'Ενημέρωση',    color: '#6B7280', is_continuation: true  },
 };
+
+export const NEW_ACT_TYPES = Object.entries(PERMIT_TYPES).filter(([, v]) => !v.is_continuation).map(([id]) => id);
+export const CONTINUATION_TYPES = Object.entries(PERMIT_TYPES).filter(([, v]) => v.is_continuation).map(([id]) => id);
 
 export const STAGES = [
   { id: 'init',            label: 'Καταχώρηση',      icon: '📋' },
@@ -33,12 +44,16 @@ export function formatDate(d) {
 
 export function stageProgress(type, stage) {
   const stageOrders = {
-    vod:  ['init', 'data_collection', 'submission', 'review', 'approved'],
-    cat1: ['init', 'data_collection', 'studies', 'submission', 'review', 'approved'],
-    cat2: ['init', 'data_collection', 'studies', 'signatures', 'submission', 'review', 'approved'],
-    cat3: ['init', 'data_collection', 'studies', 'signatures', 'submission', 'review', 'approved'],
+    new_building:  ['init', 'data_collection', 'studies', 'signatures', 'submission', 'review', 'approved'],
+    minor_cat1:    ['init', 'data_collection', 'studies', 'submission', 'review', 'approved'],
+    minor_cat2:    ['init', 'data_collection', 'studies', 'signatures', 'submission', 'review', 'approved'],
+    vod:           ['init', 'data_collection', 'submission', 'review', 'approved'],
+    preapproval:   ['init', 'data_collection', 'studies', 'submission', 'review', 'approved'],
+    revision:      ['init', 'data_collection', 'studies', 'signatures', 'submission', 'review', 'approved'],
+    revision_ext:  ['init', 'data_collection', 'studies', 'signatures', 'submission', 'review', 'approved'],
+    file_update:   ['init', 'data_collection', 'submission', 'review', 'approved'],
   };
-  const stages = stageOrders[type] || stageOrders.cat2;
+  const stages = stageOrders[type] || stageOrders.new_building;
   const idx = stages.indexOf(stage);
   if (idx === -1) return 0;
   return Math.round((idx / (stages.length - 1)) * 100);
