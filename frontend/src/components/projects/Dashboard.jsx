@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { projectsApi } from '../../api/projects.js';
+import { projectsApi, teeApi } from '../../api/projects.js';
 import { PERMIT_TYPES, STAGES, formatDate } from '../../utils/index.js';
 import ProjectForm from './ProjectForm.jsx';
+import TeeSyncPanel from '../tee/TeeSyncPanel.jsx';
 import ProgressRing from '../ui/ProgressRing.jsx';
-import StatusBadge from '../ui/StatusBadge.jsx';
 
 const STAGE_FILTERS = [{ id: '', label: 'Όλα' }, ...STAGES];
 const TYPE_FILTERS = [{ id: '', label: 'Όλοι' }, ...Object.entries(PERMIT_TYPES).map(([id, v]) => ({ id, label: v.shortLabel }))];
@@ -15,6 +15,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [showSync, setShowSync] = useState(false);
   const [stageFilter, setStageFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -22,6 +23,13 @@ export default function Dashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ['projects', stageFilter, typeFilter, search],
     queryFn: () => projectsApi.list({ stage: stageFilter || undefined, type: typeFilter || undefined, q: search || undefined }),
+  });
+
+  // Check if TEE credentials configured (for showing sync button)
+  const { data: teeStatus } = useQuery({
+    queryKey: ['tee-status'],
+    queryFn: teeApi.status,
+    retry: false,
   });
 
   const createMutation = useMutation({
@@ -53,9 +61,22 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold tracking-tight">Πίνακας Ελέγχου</h1>
           <p className="text-text-muted text-sm mt-1">Διαχείριση Αδειοδοτικών Φακέλων</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowForm(true)}>
-          + Νέος Φάκελος
-        </button>
+        <div className="flex gap-2">
+          {/* TEE Sync button — always show, panel handles no-credentials case */}
+          <button
+            className="btn-secondary flex items-center gap-1.5"
+            onClick={() => setShowSync(true)}
+            title="Συγχρονισμός από ΤΕΕ e-Adeies">
+            <span className="text-base">🔄</span>
+            <span>ΤΕΕ Sync</span>
+            {teeStatus?.configured && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />
+            )}
+          </button>
+          <button className="btn-primary" onClick={() => setShowForm(true)}>
+            + Νέος Φάκελος
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -101,13 +122,21 @@ export default function Dashboard() {
         <div className="card text-center py-14 text-text-muted">
           <div className="text-4xl mb-3">📂</div>
           <div className="font-medium">Δεν υπάρχουν φάκελοι</div>
-          <button className="btn-primary mt-4 mx-auto" onClick={() => setShowForm(true)}>Δημιουργία πρώτου φακέλου</button>
+          <div className="flex gap-2 justify-center mt-4">
+            <button className="btn-secondary" onClick={() => setShowSync(true)}>
+              🔄 Εισαγωγή από ΤΕΕ
+            </button>
+            <button className="btn-primary" onClick={() => setShowForm(true)}>
+              + Νέος Φάκελος
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
           {projects.map((p) => {
-            const pt = PERMIT_TYPES[p.type] || PERMIT_TYPES.vod;
+            const pt = PERMIT_TYPES[p.type] || PERMIT_TYPES.new_building;
             const stage = STAGES.find(s => s.id === p.stage);
+            const fromTee = !!p.tee_permit_code;
             return (
               <div key={p.id}
                 onClick={() => navigate(`/projects/${p.id}`)}
@@ -121,11 +150,21 @@ export default function Dashboard() {
                       style={{ background: pt.color + '20', color: pt.color }}>
                       {pt.shortLabel}
                     </span>
+                    {p.is_continuation && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 font-medium">
+                        Συνέχεια
+                      </span>
+                    )}
+                    {fromTee && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono">
+                        ΤΕΕ {p.tee_permit_code}
+                      </span>
+                    )}
                     <span className="font-semibold text-sm truncate">{p.title}</span>
                   </div>
                   <div className="flex gap-4 text-xs text-text-muted">
                     <span>👤 {p.client_name || '—'}</span>
-                    {p.addr && <span>📍 {p.addr}, {p.city}</span>}
+                    {p.addr && <span>📍 {p.addr}{p.city ? `, ${p.city}` : ''}</span>}
                     {p.kaek && <span className="font-mono">ΚΑΕΚ: {p.kaek}</span>}
                   </div>
                 </div>
@@ -141,7 +180,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {showForm && <ProjectForm onClose={() => setShowForm(false)} onSubmit={createMutation.mutate} loading={createMutation.isPending} />}
+      {showForm && (
+        <ProjectForm onClose={() => setShowForm(false)} onSubmit={createMutation.mutate} loading={createMutation.isPending} />
+      )}
+      {showSync && <TeeSyncPanel onClose={() => setShowSync(false)} />}
     </div>
   );
 }

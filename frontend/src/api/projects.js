@@ -51,3 +51,10 @@ export const authApi = {
   me: () => api.get('/api/auth/me'),
   updateProfile: (data) => api.patch('/api/auth/profile', data),
 };
+
+export const teeApi = {
+  status: () => api.get('/api/tee/status'),
+  sync: () => api.post('/api/tee/sync'),
+  import: (applications) => api.post('/api/tee/import', { applications }),
+  refresh: (id) => api.post(`/api/tee/refresh/${id}`),
+};

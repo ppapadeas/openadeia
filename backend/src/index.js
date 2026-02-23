@@ -15,6 +15,7 @@ import emailRoute from './routes/email.js';
 import signRoute from './routes/sign.js';
 import clientsRoute from './routes/clients.js';
 import searchRoute from './routes/search.js';
+import teeRoute from './routes/tee.js';
 
 const app = Fastify({
   logger: {
@@ -63,6 +64,7 @@ await app.register(nokRoute, { prefix: '/api/nok' });
 await app.register(signRoute, { prefix: '/api/sign' });
 await app.register(clientsRoute, { prefix: '/api/clients' });
 await app.register(searchRoute, { prefix: '/api/search' });
+await app.register(teeRoute, { prefix: '/api/tee' });
 
 // ── Health check ────────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
