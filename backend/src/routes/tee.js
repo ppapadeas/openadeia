@@ -52,7 +52,7 @@ export default async function teeRoute(fastify) {
       // 422 not 401 — TEE portal auth failure is NOT the same as our session expiry.
       // A 401 here would trigger the frontend auto-logout interceptor incorrectly.
       if (err.teeDebug) {
-        request.log.warn({ teeDebug: err.teeDebug }, 'TEE login failed — OAM debug info');
+        req.log.warn({ teeDebug: err.teeDebug }, 'TEE login failed — OAM debug info');
       }
       return reply.code(422).send({ error: err.message });
     }
