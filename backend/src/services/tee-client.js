@@ -345,7 +345,7 @@ export function teeStatusToStage(teeStatus, teeStatusCode) {
   const c = String(teeStatusCode || '');
   if (s.includes('εγκρ') || s.includes('εκδο') || c === '5') return 'approved';
   if (s.includes('ελεγχ')                       || c === '4') return 'review';
-  if (s.includes('υποβολ') || s.includes('submit') || c === '3') return 'submission';
+  if (s.includes('υποβολ') || s.includes('υποβλ') || s.includes('submit') || c === '3') return 'submission';
   if (s.includes('υπογραφ')                     || c === '2') return 'signatures';
   if (s.includes('μελετ')                       || c === '1') return 'studies';
   return 'data_collection';
