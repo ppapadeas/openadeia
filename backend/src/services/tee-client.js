@@ -242,10 +242,24 @@ export class TeeClient {
       });
 
       if (rows.length === 0) {
-        throw new Error(
+        // Capture debug info so we can see what the ADF portal actually rendered
+        let debugScreenshot, debugHtml, debugUrl;
+        try {
+          debugUrl = page.url();
+          debugScreenshot = (await page.screenshot()).toString('base64');
+          debugHtml = await page.content();
+        } catch { /* best effort */ }
+
+        const err = new Error(
           'Η σύνδεση στο ΤΕΕ e-Adeies ήταν επιτυχής, αλλά δεν βρέθηκαν αιτήσεις. ' +
           'Εάν έχετε καταχωρημένες άδειες, επικοινωνήστε μαζί μας.'
         );
+        err.teeDebug = {
+          url: debugUrl,
+          screenshotBase64: debugScreenshot,
+          htmlSnippet: (debugHtml || '').slice(0, 4000),
+        };
+        throw err;
       }
 
       return rows.map(cells => {

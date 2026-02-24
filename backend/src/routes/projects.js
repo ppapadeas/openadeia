@@ -27,7 +27,7 @@ export default async function projectsRoute(fastify) {
     );
 
     const offset = (Number(page) - 1) * Number(limit);
-    const [{ count }] = await query.clone().count('p.id as count');
+    const [{ count }] = await query.clone().clearSelect().clearOrder().count('p.id as count');
     const rows = await query.limit(Number(limit)).offset(offset);
 
     reply.send({ data: rows, total: Number(count), page: Number(page), limit: Number(limit) });
