@@ -127,7 +127,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: GITHUB_SHA=${{ github.sha }}
+          build-args: |
+            GITHUB_SHA=${{ github.sha }}
+            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

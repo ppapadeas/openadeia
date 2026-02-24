@@ -3,6 +3,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_SENTRY_DSN=${VITE_SENTRY_DSN:-}
     ports:
       - "3000:3000"
     depends_on:
@@ -46,6 +48,7 @@ services:
       - IMAP_PORT=${IMAP_PORT:-993}
       - IMAP_USER=${IMAP_USER:-}
       - IMAP_PASS=${IMAP_PASS:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
     restart: unless-stopped
 
   db:
