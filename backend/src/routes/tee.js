@@ -10,7 +10,8 @@
 import * as Sentry from '@sentry/node';
 import db from '../config/database.js';
 import { decryptTeePassword } from './auth.js';
-import { TeeClient, teeStatusToStage, teeTypeCodeToPermitType } from '../services/tee-client.js';
+import { TeeClient, teeStatusToStage, teeTypeCodeToPermitType, assembleSubmissionData } from '../services/tee-client.js';
+import { generateXML } from '../utils/xml-generator.js';
 
 export default async function teeRoute(fastify) {
   // All TEE routes require authentication
@@ -155,6 +156,90 @@ export default async function teeRoute(fastify) {
     }
 
     reply.send({ results, imported: results.filter(r => r.action === 'imported').length });
+  });
+
+  // ── POST /api/tee/submit/:id ────────────────────────────────────────
+  // Generate XML from project data and upload it to TEE e-Adeies portal.
+  fastify.post('/submit/:id', auth, async (req, reply) => {
+    const project = await db('projects').where({ id: req.params.id, deleted: false }).first();
+    if (!project) {
+      return reply.code(404).send({ error: 'Φάκελος δεν βρέθηκε' });
+    }
+
+    if (project.stage !== 'submission') {
+      return reply.code(422).send({
+        error: `Ο φάκελος πρέπει να βρίσκεται στο στάδιο "Υποβολή" (τρέχον: ${project.stage}).`,
+      });
+    }
+
+    const user = await db('users').where({ id: req.user.id }).first();
+    if (!user?.tee_username || !user?.tee_password_enc) {
+      return reply.code(422).send({
+        error: 'Δεν έχετε ορίσει στοιχεία ΤΕΕ. Μεταβείτε στο Προφίλ σας.',
+      });
+    }
+
+    const teePassword = decryptTeePassword(user.tee_password_enc);
+    if (!teePassword) {
+      return reply.code(500).send({ error: 'Αδυναμία αποκρυπτογράφησης κωδικού ΤΕΕ.' });
+    }
+
+    // Assemble data and generate XML
+    let xmlString;
+    try {
+      const data = await assembleSubmissionData(req.params.id);
+      xmlString = generateXML(data);
+    } catch (err) {
+      return reply.code(422).send({ error: `Σφάλμα δημιουργίας XML: ${err.message}` });
+    }
+
+    // Upload XML to TEE portal via Playwright
+    const client = new TeeClient(user.tee_username, teePassword);
+    let result;
+    try {
+      result = await client.submitApplication(xmlString, req.params.id);
+    } catch (err) {
+      if (err.teeDebug) {
+        req.log.warn({ teeDebug: err.teeDebug }, 'TEE submission failed — debug info');
+      }
+      if (!err.credentialError) {
+        Sentry.captureException(err, { extra: { teeDebug: err.teeDebug, projectId: req.params.id } });
+      }
+      const statusCode = err.credentialError ? 422 : 502;
+      return reply.code(statusCode).send({ error: err.message });
+    }
+
+    // Update project with submission result
+    const updates = {
+      tee_submitted_at: db.fn.now(),
+      stage: 'review',
+      updated_at: db.fn.now(),
+    };
+    if (result.tee_permit_code) updates.tee_permit_code = result.tee_permit_code;
+    if (result.tee_submission_ref) updates.tee_submission_ref = result.tee_submission_ref;
+
+    await db.transaction(async (trx) => {
+      await trx('projects').where({ id: req.params.id }).update(updates);
+      await trx('workflow_logs').insert({
+        project_id: req.params.id,
+        action: `Υποβολή XML στο ΤΕΕ e-Adeies${result.tee_permit_code ? ` (κωδ. ${result.tee_permit_code})` : ''}`,
+        from_stage: 'submission',
+        to_stage: 'review',
+        user_id: req.user.id,
+        metadata: {
+          source: 'tee_submit',
+          tee_permit_code: result.tee_permit_code,
+          tee_submission_ref: result.tee_submission_ref,
+        },
+      });
+    });
+
+    reply.send({
+      success: true,
+      stage: 'review',
+      tee_permit_code: result.tee_permit_code,
+      tee_submission_ref: result.tee_submission_ref,
+    });
   });
 
   // ── POST /api/tee/refresh/:id ───────────────────────────────────────
