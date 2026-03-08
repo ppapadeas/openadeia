@@ -11,6 +11,12 @@
  *      -> failure: stays on sso.tee.gr (finalUrl still contains sso.tee.gr)
  */
 
+import { writeFile, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import db from '../config/database.js';
+import { generateXML } from '../utils/xml-generator.js';
+
 const BASE_URL   = process.env.TEE_API_BASE || 'https://services.tee.gr';
 const SSO_URL    = process.env.TEE_SSO_BASE || 'https://sso.tee.gr';
 const USER_AGENT = 'OpenAdeia/1.2 (openadeia.org)';
@@ -282,6 +288,228 @@ export class TeeClient {
     }
   }
 
+  /**
+   * Submit an application to TEE e-Adeies by uploading generated XML.
+   * Uses Playwright to navigate the ADF portal and upload the XML file.
+   *
+   * @param {string} xmlString - Valid XML conforming to AdeiaAitisiInput.xsd
+   * @param {string} projectId - Project ID (used for temp file naming)
+   * @returns {{ success: boolean, tee_permit_code: string|null, tee_submission_ref: string|null }}
+   */
+  async submitApplication(xmlString, projectId) {
+    let chromium;
+    try {
+      ({ chromium } = await import('playwright-core'));
+    } catch {
+      throw new Error('Playwright δεν είναι διαθέσιμο στον server. Επικοινωνήστε με τη διαχείριση.');
+    }
+
+    // Write XML to a temp file for the file upload input
+    const tmpPath = join(tmpdir(), `openadeia-submit-${projectId}-${Date.now()}.xml`);
+    await writeFile(tmpPath, xmlString, 'utf-8');
+
+    let browser;
+    try {
+      browser = await chromium.launch({
+        ...(process.env.CHROMIUM_EXECUTABLE_PATH
+          ? { executablePath: process.env.CHROMIUM_EXECUTABLE_PATH }
+          : {}),
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
+      });
+    } catch (e) {
+      await unlink(tmpPath).catch(() => {});
+      throw new Error(`Αδυναμία εκκίνησης headless browser: ${e.message}`);
+    }
+
+    try {
+      const context = await browser.newContext({ userAgent: USER_AGENT, locale: 'el-GR' });
+      const page    = await context.newPage();
+      page.setDefaultTimeout(60_000);
+
+      // Navigate to the ADF portal — OAM SSO will redirect to the login page
+      await page.goto(`${BASE_URL}/adeia/faces/main`, { waitUntil: 'domcontentloaded' });
+
+      // Authenticate if on SSO login page
+      if (page.url().includes('sso.tee.gr')) {
+        await page.fill('input[name="username"]', this.username);
+        await page.fill('input[name="password"]', this.password);
+        await Promise.all([
+          page.waitForURL(url => !url.includes('sso.tee.gr'), { timeout: 25_000 })
+            .catch(() => null),
+          page.press('input[name="password"]', 'Enter'),
+        ]);
+
+        if (page.url().includes('sso.tee.gr')) {
+          const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
+          err.credentialError = true;
+          throw err;
+        }
+      }
+
+      // Wait for ADF application to fully render
+      await page.waitForLoadState('networkidle', { timeout: 35_000 });
+
+      // Navigate to the XML import/upload page.
+      // ADF portal typically has a navigation menu or link for XML import.
+      // Try common ADF selectors for the import/upload action.
+      const importSelectors = [
+        'a:has-text("Εισαγωγή XML")',
+        'a:has-text("Εισαγωγή")',
+        'a:has-text("Import XML")',
+        'a:has-text("Φόρτωση XML")',
+        'button:has-text("Εισαγωγή XML")',
+        'button:has-text("Εισαγωγή")',
+        '[id*="import" i]',
+        '[id*="eisagwg" i]',
+        '[id*="upload" i]',
+      ];
+
+      let foundImportLink = false;
+      for (const sel of importSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el && await el.isVisible()) {
+            await el.click();
+            await page.waitForLoadState('networkidle', { timeout: 15_000 });
+            foundImportLink = true;
+            break;
+          }
+        } catch { /* try next selector */ }
+      }
+
+      if (!foundImportLink) {
+        // Capture debug info for troubleshooting
+        let debugScreenshot, debugHtml;
+        try {
+          debugScreenshot = (await page.screenshot()).toString('base64');
+          debugHtml = await page.content();
+        } catch { /* best effort */ }
+
+        const err = new Error(
+          'Δεν βρέθηκε η σελίδα εισαγωγής XML στο e-Adeies. ' +
+          'Η δομή του portal μπορεί να έχει αλλάξει. Επικοινωνήστε με τη διαχείριση.'
+        );
+        err.teeDebug = {
+          url: page.url(),
+          screenshotBase64: debugScreenshot,
+          htmlSnippet: (debugHtml || '').slice(0, 4000),
+        };
+        throw err;
+      }
+
+      // Find the file input and upload the XML
+      // ADF uses <input type="file"> or af:inputFile which renders as <input type="file">
+      const fileInputSelectors = [
+        'input[type="file"]',
+        'input[name*="file" i]',
+        'input[name*="xml" i]',
+        'input[id*="file" i]',
+        'input[id*="upload" i]',
+      ];
+
+      let fileInput = null;
+      for (const sel of fileInputSelectors) {
+        fileInput = await page.$(sel);
+        if (fileInput) break;
+      }
+
+      if (!fileInput) {
+        let debugScreenshot;
+        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch {}
+        const err = new Error('Δεν βρέθηκε πεδίο αρχείου στη σελίδα εισαγωγής XML.');
+        err.teeDebug = { url: page.url(), screenshotBase64: debugScreenshot };
+        throw err;
+      }
+
+      await fileInput.setInputFiles(tmpPath);
+
+      // Click the submit/upload button
+      const submitSelectors = [
+        'button:has-text("Υποβολή")',
+        'button:has-text("Αποστολή")',
+        'button:has-text("Φόρτωση")',
+        'button:has-text("Submit")',
+        'button:has-text("Upload")',
+        'input[type="submit"]',
+        'button[type="submit"]',
+        '[id*="submit" i]',
+      ];
+
+      let submitted = false;
+      for (const sel of submitSelectors) {
+        try {
+          const btn = await page.$(sel);
+          if (btn && await btn.isVisible()) {
+            await btn.click();
+            await page.waitForLoadState('networkidle', { timeout: 45_000 });
+            submitted = true;
+            break;
+          }
+        } catch { /* try next */ }
+      }
+
+      if (!submitted) {
+        let debugScreenshot;
+        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch {}
+        const err = new Error('Δεν βρέθηκε κουμπί υποβολής στη σελίδα εισαγωγής XML.');
+        err.teeDebug = { url: page.url(), screenshotBase64: debugScreenshot };
+        throw err;
+      }
+
+      // Check for errors on the result page
+      const pageText = await page.textContent('body');
+      const errorPatterns = [/σφάλμα/i, /αποτυχ/i, /error/i, /invalid/i, /λάθος/i];
+      for (const pattern of errorPatterns) {
+        if (pattern.test(pageText)) {
+          // Check if it's a real error vs just a label containing the word
+          const errorElSelectors = ['.error', '.af_message_error', '[class*="error" i]', '.message-error'];
+          for (const esel of errorElSelectors) {
+            const errorEl = await page.$(esel);
+            if (errorEl) {
+              const errorText = await errorEl.textContent();
+              if (errorText?.trim()) {
+                const err = new Error(`Σφάλμα κατά την υποβολή στο ΤΕΕ: ${errorText.trim().slice(0, 300)}`);
+                err.teeSubmissionError = true;
+                throw err;
+              }
+            }
+          }
+        }
+      }
+
+      // Extract permit code / confirmation reference from the result page
+      let tee_permit_code = null;
+      let tee_submission_ref = null;
+
+      // Look for permit code patterns (e.g., "2024/12345" or "123456")
+      const codeMatch = pageText.match(/(?:κωδικ[οό]ς|αριθμ[οό]ς|code)[:\s]*(\d{4}\/\d+|\d{6,})/i);
+      if (codeMatch) {
+        tee_permit_code = codeMatch[1];
+      }
+
+      // Look for protocol/reference number
+      const refMatch = pageText.match(/(?:πρωτ[οό]κολλο|αρ\.|αριθμ)[:\s]*([A-Za-z0-9\-\/]+)/i);
+      if (refMatch) {
+        tee_submission_ref = refMatch[1];
+      }
+
+      return {
+        success: true,
+        tee_permit_code,
+        tee_submission_ref,
+      };
+    } finally {
+      await browser?.close();
+      await unlink(tmpPath).catch(() => {});
+    }
+  }
+
   async fetchApplicationDetails(teeCode) {
     const candidates = [
       `${BASE_URL}/adeia/rest/v1/Aitiseis/${teeCode}`,
@@ -349,6 +577,40 @@ export function teeStatusToStage(teeStatus, teeStatusCode) {
   if (s.includes('υπογραφ')                     || c === '2') return 'signatures';
   if (s.includes('μελετ')                       || c === '1') return 'studies';
   return 'data_collection';
+}
+
+// ── Assemble project data for TEE XML submission ─────────────────
+export async function assembleSubmissionData(projectId) {
+  const project = await db('projects').where({ id: projectId }).first();
+  if (!project) throw new Error('Project not found');
+
+  const [property, ekdosi, docRights, approvals, prevPraxis] = await Promise.all([
+    db('properties').where({ project_id: projectId }).first(),
+    db('ekdosi').where({ project_id: projectId }).first(),
+    db('doc_rights').where({ project_id: projectId }),
+    db('approvals').where({ project_id: projectId }),
+    db('prev_praxis').where({ project_id: projectId }),
+  ]);
+
+  const owners = project.client_id
+    ? await db('clients').where({ id: project.client_id })
+    : [];
+  const engineers = project.created_by
+    ? await db('users').where({ id: project.created_by })
+    : [];
+
+  return {
+    project,
+    property,
+    ekdosi,
+    owners,
+    engineers,
+    docRights,
+    approvals,
+    approvalsExt: [],
+    parkings: [],
+    prevPraxis,
+  };
 }
 
 // ── Map TEE aitisi_type_code -> our permit type ───────────────────
