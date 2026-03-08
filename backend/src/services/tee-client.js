@@ -166,8 +166,12 @@ export class TeeClient {
   // We use a headless Chromium browser (via playwright-core) to:
   //   1. Navigate to the portal (OAM SSO redirects to login page)
   //   2. Fill credentials and submit
-  //   3. Wait for ADF to finish loading the permit table
-  //   4. Extract rows from the fully-rendered DOM
+  //   3. Wait for ADF rich table component to populate with data rows
+  //   4. Scroll through the virtual-scrolling table to collect all rows
+  //   5. Extract permit data from the fully-rendered DOM
+  //
+  // The ADF table component (pt1:r1:0:pc1:resId1) uses virtual scrolling
+  // (viewportSize ~24 rows rendered at a time). We must scroll to collect all.
   //
   // Throws err.credentialError = true when credentials are rejected by OAM.
   async fetchMyApplications() {
@@ -181,8 +185,6 @@ export class TeeClient {
     let browser;
     try {
       browser = await chromium.launch({
-        // Use Playwright's bundled Chromium by default (version-matched, reliable).
-        // Set CHROMIUM_EXECUTABLE_PATH to override (e.g. for local dev without npm install playwright).
         ...(process.env.CHROMIUM_EXECUTABLE_PATH
           ? { executablePath: process.env.CHROMIUM_EXECUTABLE_PATH }
           : {}),
@@ -201,7 +203,7 @@ export class TeeClient {
     try {
       const context = await browser.newContext({ userAgent: USER_AGENT, locale: 'el-GR' });
       const page    = await context.newPage();
-      page.setDefaultTimeout(30_000);
+      page.setDefaultTimeout(45_000);
 
       // Navigate to the ADF portal — OAM SSO will redirect to the login page
       await page.goto(`${BASE_URL}/adeia/faces/main`, { waitUntil: 'domcontentloaded' });
@@ -212,11 +214,10 @@ export class TeeClient {
         await page.fill('input[name="password"]', this.password);
         await Promise.all([
           page.waitForURL(url => !url.includes('sso.tee.gr'), { timeout: 25_000 })
-            .catch(() => null), // resolve even if we time out; we check url below
+            .catch(() => null),
           page.press('input[name="password"]', 'Enter'),
         ]);
 
-        // Still on SSO page → wrong credentials
         if (page.url().includes('sso.tee.gr')) {
           const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
           err.credentialError = true;
@@ -224,35 +225,107 @@ export class TeeClient {
         }
       }
 
-      // Wait for the ADF application to fully render (all XHR complete)
-      await page.waitForLoadState('networkidle', { timeout: 35_000 });
+      // Wait for the ADF application to fully load.
+      // networkidle alone isn't enough — ADF PPR may still be populating the table.
+      await page.waitForLoadState('networkidle', { timeout: 40_000 });
 
-      // Extract permit rows from the rendered table DOM
-      const isPermitCode = (c) => /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
+      // Wait for the ADF rich table to appear. The component renders as a <table>
+      // inside a scrollable container. Try multiple selectors: ADF component ID,
+      // ADF-generated table classes, or any data table with enough columns.
+      const tableSelectors = [
+        'table[id*="resId1"]',           // ADF component: pt1:r1:0:pc1:resId1
+        'table[id*="pc1"]',              // panel collection table
+        '.xgi',                          // ADF rich table class
+        'table.x1o',                     // alternative ADF table class
+        'div.af_table table',            // af:table wrapper
+        'table',                         // fallback: any table
+      ];
 
+      let tableEl = null;
+      for (const sel of tableSelectors) {
+        try {
+          tableEl = await page.waitForSelector(sel, { timeout: 8_000, state: 'attached' });
+          if (tableEl) break;
+        } catch { /* try next selector */ }
+      }
+
+      // Give ADF extra time to populate table body via PPR after the table element exists
+      await page.waitForTimeout(3_000);
+      // Wait for any in-flight PPR requests to complete
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+      // Extract data rows from the ADF table.
+      // Strategy: find all <tr> elements that contain data cells (not headers),
+      // using broad matching to handle various ADF table markup patterns.
       const rows = await page.evaluate(() => {
-        /* global document -- this callback runs inside the browser, not Node.js */
-        function isPermitCode(c) {
-          return /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
-        }
         const results = [];
-        for (const tr of document.querySelectorAll('tr')) {
-          const cells = [...tr.querySelectorAll('td')]
-            .map(td => (td.innerText || '').trim())
-            .filter(Boolean);
-          if (cells.length < 2) continue;
-          if (!cells.some(isPermitCode)) continue;
-          results.push(cells);
+        const seen = new Set(); // deduplicate by row text
+
+        // Permit code patterns: "2024/12345", "123456", or prefixed like "ΑΡ.123456"
+        function looksLikePermitCode(c) {
+          return /\d{4}\/\d+/.test(c) || /\d{5,}/.test(c);
         }
+
+        // Collect from all tables (ADF may render main + detail tables)
+        for (const table of document.querySelectorAll('table')) {
+          for (const tr of table.querySelectorAll('tr')) {
+            const cells = [...tr.querySelectorAll('td')]
+              .map(td => (td.innerText || td.textContent || '').trim())
+              .filter(Boolean);
+            if (cells.length < 2) continue;
+
+            // Skip header-like rows (all short text, no numbers)
+            if (cells.every(c => c.length < 3 && !/\d/.test(c))) continue;
+
+            // Build a key to deduplicate
+            const key = cells.join('|');
+            if (seen.has(key)) continue;
+
+            // Accept row if it has a permit code OR has enough data cells (4+)
+            // to be a real data row (some permit codes may be in non-standard format)
+            if (cells.some(looksLikePermitCode) || cells.length >= 4) {
+              seen.add(key);
+              results.push(cells);
+            }
+          }
+        }
+
+        // If the ADF table uses div-based rendering (af:treeTable or panelCollection),
+        // also check for role="row" elements
+        if (results.length === 0) {
+          for (const row of document.querySelectorAll('[role="row"]')) {
+            const cells = [...row.querySelectorAll('[role="gridcell"], [role="cell"]')]
+              .map(el => (el.innerText || el.textContent || '').trim())
+              .filter(Boolean);
+            if (cells.length < 2) continue;
+            const key = cells.join('|');
+            if (seen.has(key)) continue;
+            if (cells.some(looksLikePermitCode) || cells.length >= 4) {
+              seen.add(key);
+              results.push(cells);
+            }
+          }
+        }
+
         return results;
       });
 
+      // If virtual scrolling hid some rows, try scrolling the table container
+      // and re-extracting. ADF tables with viewportSize < totalRows only render
+      // a window of rows at a time.
+      if (tableEl && rows.length > 0) {
+        const moreRows = await this._scrollAndCollectRows(page, rows);
+        if (moreRows.length > rows.length) {
+          rows.length = 0;
+          rows.push(...moreRows);
+        }
+      }
+
       if (rows.length === 0) {
-        // Capture debug info so we can see what the ADF portal actually rendered
         let debugScreenshot, debugHtml, debugUrl;
         try {
           debugUrl = page.url();
-          debugScreenshot = (await page.screenshot()).toString('base64');
+          debugScreenshot = (await page.screenshot({ fullPage: true })).toString('base64');
           debugHtml = await page.content();
         } catch { /* best effort */ }
 
@@ -263,29 +336,137 @@ export class TeeClient {
         err.teeDebug = {
           url: debugUrl,
           screenshotBase64: debugScreenshot,
-          htmlSnippet: (debugHtml || '').slice(0, 4000),
+          htmlSnippet: (debugHtml || '').slice(0, 8000),
         };
         throw err;
       }
 
-      return rows.map(cells => {
-        const code = cells.find(isPermitCode);
-        return {
-          tee_permit_code: code,
-          title: cells.find(c => c !== code && c.length > 5) || `Αδεια ΤΕΕ ${code}`,
-          aitisi_type_code: null,
-          yd_id: null, dimos_aa: null,
-          address: '', city: '', kaek: '',
-          tee_status: cells.find(c => /εκδ|εγκρ|ελεγχ|υποβολ|υπογρ/i.test(c)) || '',
-          tee_status_code: '',
-          tee_submission_date: null,
-          is_continuation: false,
-          _raw: cells,
-        };
-      });
+      return this._parseTableRows(rows);
     } finally {
       await browser.close();
     }
+  }
+
+  // Scroll through an ADF virtual-scrolling table to collect all rows.
+  // Returns the full deduplicated row set.
+  async _scrollAndCollectRows(page, initialRows) {
+    const allRows = new Map();
+    for (const cells of initialRows) {
+      allRows.set(cells.join('|'), cells);
+    }
+
+    // Find the scrollable container (ADF wraps the table body in a scrollable div)
+    const scrollContainer = await page.$('div[id*="pc1"] div[style*="overflow"]') ||
+                            await page.$('.af_table_data-body') ||
+                            await page.$('div[id*="resId1"]');
+
+    if (!scrollContainer) return initialRows;
+
+    // Scroll down in increments, collecting new rows each time
+    const maxScrollAttempts = 10;
+    for (let i = 0; i < maxScrollAttempts; i++) {
+      await page.evaluate(el => el?.scrollBy(0, 500), scrollContainer);
+      await page.waitForTimeout(1_500);
+      await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
+
+      const newRows = await page.evaluate(() => {
+        const results = [];
+        function looksLikePermitCode(c) {
+          return /\d{4}\/\d+/.test(c) || /\d{5,}/.test(c);
+        }
+        for (const tr of document.querySelectorAll('tr')) {
+          const cells = [...tr.querySelectorAll('td')]
+            .map(td => (td.innerText || td.textContent || '').trim())
+            .filter(Boolean);
+          if (cells.length < 2) continue;
+          if (cells.some(looksLikePermitCode) || cells.length >= 4) {
+            results.push(cells);
+          }
+        }
+        return results;
+      });
+
+      const prevSize = allRows.size;
+      for (const cells of newRows) {
+        allRows.set(cells.join('|'), cells);
+      }
+      // Stop scrolling when no new rows appear
+      if (allRows.size === prevSize) break;
+    }
+
+    return [...allRows.values()];
+  }
+
+  // Parse raw table cell arrays into structured application objects.
+  _parseTableRows(rows) {
+    function extractPermitCode(cells) {
+      for (const c of cells) {
+        // Standard format: 2024/12345
+        const m1 = c.match(/(\d{4}\/\d+)/);
+        if (m1) return m1[1];
+        // Numeric only: 123456+
+        const m2 = c.match(/(\d{5,})/);
+        if (m2) return m2[1];
+      }
+      return null;
+    }
+
+    // Detect column layout from the first row (ADF tables have consistent columns)
+    return rows
+      .map(cells => {
+        const code = extractPermitCode(cells);
+        if (!code) return null; // skip rows without a permit code
+
+        // Find status text (Greek keywords for permit stages)
+        const statusCell = cells.find(c =>
+          /εκδ|εγκρ|ελεγχ|υποβολ|υπογρ|ολοκλ|ακυρ|αναμον|ενεργ|προσωρ|πληρ|μελετ/i.test(c)
+        ) || '';
+
+        // Find address-like cell (contains street indicators or numbers with text)
+        const addressCell = cells.find(c =>
+          c !== code && c !== statusCell &&
+          (/οδ[οό]ς|λεωφ|πλατ|αριθμ|\d+\s*[α-ω]/i.test(c) || /\d+/.test(c) && c.length > 10)
+        ) || '';
+
+        // Find title/description (longest text cell that isn't code, status, or address)
+        const usedCells = new Set([code, statusCell, addressCell].filter(Boolean));
+        const titleCell = cells
+          .filter(c => !usedCells.has(c) && c.length > 5)
+          .sort((a, b) => b.length - a.length)[0]
+          || `Άδεια ΤΕΕ ${code}`;
+
+        // Find date-like cell
+        const dateCell = cells.find(c => /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(c));
+        let submissionDate = null;
+        if (dateCell) {
+          const dm = dateCell.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+          if (dm) {
+            const y = dm[3].length === 2 ? `20${dm[3]}` : dm[3];
+            submissionDate = `${y}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`;
+          }
+        }
+
+        // Find KAEK (12-digit cadastral code)
+        const kaekCell = cells.find(c => /\d{12}/.test(c));
+        const kaek = kaekCell ? (kaekCell.match(/(\d{12})/)?.[1] || '') : '';
+
+        return {
+          tee_permit_code: code,
+          title: titleCell,
+          aitisi_type_code: null,
+          yd_id: null,
+          dimos_aa: null,
+          address: addressCell,
+          city: '',
+          kaek,
+          tee_status: statusCell,
+          tee_status_code: '',
+          tee_submission_date: submissionDate,
+          is_continuation: false,
+          _raw: cells,
+        };
+      })
+      .filter(Boolean);
   }
 
   /**
