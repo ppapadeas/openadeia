@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { projectsApi } from '../../api/projects.js';
+import { projectsApi, teeApi } from '../../api/projects.js';
 import { PERMIT_TYPES, STAGES, formatDate } from '../../utils/index.js';
 import StageIndicator from '../workflow/StageIndicator.jsx';
 import DocList from '../documents/DocList.jsx';
@@ -25,6 +25,7 @@ export default function ProjectDetail() {
   const qc = useQueryClient();
   const [tab, setTab] = useState('overview');
   const [showCompose, setShowCompose] = useState(false);
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -39,6 +40,23 @@ export default function ProjectDetail() {
       toast.success(`Μετάβαση: ${r.fromStage} → ${r.toStage}`);
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  const submitToTeeMutation = useMutation({
+    mutationFn: () => teeApi.submit(id),
+    onSuccess: (r) => {
+      qc.invalidateQueries(['project', id]);
+      qc.invalidateQueries(['projects']);
+      setShowSubmitConfirm(false);
+      const msg = r.data?.tee_permit_code
+        ? `Υποβολή επιτυχής! Κωδικός ΤΕΕ: ${r.data.tee_permit_code}`
+        : 'Υποβολή στο ΤΕΕ e-Adeies ολοκληρώθηκε επιτυχώς!';
+      toast.success(msg);
+    },
+    onError: (e) => {
+      setShowSubmitConfirm(false);
+      toast.error(e.response?.data?.error || e.message);
+    },
   });
 
   const { data: timeline = [] } = useQuery({
@@ -86,7 +104,16 @@ export default function ProjectDetail() {
             </div>
           </div>
           <div className="flex flex-col gap-2 flex-shrink-0">
-            {!isLastStage && (
+            {project.stage === 'submission' && (
+              <button
+                className="btn-primary bg-green-600 hover:bg-green-700"
+                onClick={() => setShowSubmitConfirm(true)}
+                disabled={submitToTeeMutation.isPending}
+              >
+                {submitToTeeMutation.isPending ? 'Υποβολή στο ΤΕΕ…' : 'Υποβολή στο ΤΕΕ'}
+              </button>
+            )}
+            {!isLastStage && project.stage !== 'submission' && (
               <button className="btn-primary" onClick={() => advanceMutation.mutate()} disabled={advanceMutation.isPending}>
                 {advanceMutation.isPending ? 'Ενημέρωση…' : `▶ Επόμενο Στάδιο`}
               </button>
@@ -131,6 +158,37 @@ export default function ProjectDetail() {
           onClose={() => setShowCompose(false)}
           onSent={() => { qc.invalidateQueries(['emails', id]); setShowCompose(false); setTab('email'); }}
         />
+      )}
+
+      {showSubmitConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="card max-w-md mx-4">
+            <h3 className="font-semibold text-lg mb-3">Υποβολή στο ΤΕΕ e-Adeies</h3>
+            <p className="text-sm text-text-muted mb-4">
+              Θα δημιουργηθεί XML από τα στοιχεία του φακέλου και θα υποβληθεί αυτόματα στο portal ΤΕΕ e-Adeies.
+              Η διαδικασία μπορεί να διαρκέσει 30-60 δευτερόλεπτα.
+            </p>
+            <p className="text-sm text-amber-400 mb-4">
+              Βεβαιωθείτε ότι όλα τα στοιχεία είναι σωστά πριν την υποβολή.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                className="btn-secondary"
+                onClick={() => setShowSubmitConfirm(false)}
+                disabled={submitToTeeMutation.isPending}
+              >
+                Ακύρωση
+              </button>
+              <button
+                className="btn-primary bg-green-600 hover:bg-green-700"
+                onClick={() => submitToTeeMutation.mutate()}
+                disabled={submitToTeeMutation.isPending}
+              >
+                {submitToTeeMutation.isPending ? 'Υποβολή σε εξέλιξη…' : 'Υποβολή'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

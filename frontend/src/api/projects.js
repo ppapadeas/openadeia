@@ -57,4 +57,5 @@ export const teeApi = {
   sync: () => api.post('/api/tee/sync'),
   import: (applications) => api.post('/api/tee/import', { applications }),
   refresh: (id) => api.post(`/api/tee/refresh/${id}`),
+  submit: (id) => api.post(`/api/tee/submit/${id}`),
 };
