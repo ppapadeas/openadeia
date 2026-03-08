@@ -225,9 +225,50 @@ export class TeeClient {
         }
       }
 
-      // Wait for the ADF application to fully load.
-      // networkidle alone isn't enough — ADF PPR may still be populating the table.
+      // Wait for the ADF application to fully boot.
+      //
+      // Oracle ADF 12c has a multi-phase boot sequence:
+      //   1. Initial HTML with afr::Splash overlay (loading spinner)
+      //   2. boot-*.js loads and initializes the ADF Faces framework
+      //   3. Framework loads partition JS files (grid, form, nav, etc.)
+      //   4. ADF removes the splash overlay and renders the page shell
+      //   5. PPR (Partial Page Render) requests populate data components
+      //
+      // networkidle alone often fires after step 2/3 but before step 5.
+      // We must wait for the splash to disappear AND for the data to render.
+
+      // Phase 1: wait for initial network burst to settle
       await page.waitForLoadState('networkidle', { timeout: 40_000 });
+
+      // Phase 2: wait for ADF splash screen to disappear.
+      // The splash is rendered as an absolutely-positioned div with class
+      // containing "Splash" or id containing "Splash". When ADF finishes
+      // booting, it removes/hides this element.
+      try {
+        await page.waitForFunction(() => {
+          const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
+          // Splash is gone, or hidden, or opacity 0
+          if (!splash) return true;
+          const style = window.getComputedStyle(splash);
+          return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+        }, { timeout: 30_000 });
+      } catch {
+        // Splash may not exist at all (already gone) — continue
+      }
+
+      // Phase 3: wait for ADF framework object to be available.
+      // AdfPage.PAGE is the singleton created after framework init.
+      try {
+        await page.waitForFunction(
+          () => !!(window.AdfPage?.PAGE || window.AdfRichUIPeer || document.querySelector('.af_document')),
+          { timeout: 15_000 }
+        );
+      } catch {
+        // Framework object may use a different name — continue anyway
+      }
+
+      // Phase 4: wait for a second networkidle after ADF boot PPR cycle
+      await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
       // Wait for the ADF rich table to appear. The component renders as a <table>
       // inside a scrollable container. Try multiple selectors: ADF component ID,
@@ -238,13 +279,14 @@ export class TeeClient {
         '.xgi',                          // ADF rich table class
         'table.x1o',                     // alternative ADF table class
         'div.af_table table',            // af:table wrapper
+        '[role="grid"]',                 // ARIA grid role (ADF tables)
         'table',                         // fallback: any table
       ];
 
       let tableEl = null;
       for (const sel of tableSelectors) {
         try {
-          tableEl = await page.waitForSelector(sel, { timeout: 8_000, state: 'attached' });
+          tableEl = await page.waitForSelector(sel, { timeout: 10_000, state: 'attached' });
           if (tableEl) break;
         } catch { /* try next selector */ }
       }
@@ -322,11 +364,25 @@ export class TeeClient {
       }
 
       if (rows.length === 0) {
-        let debugScreenshot, debugHtml, debugUrl;
+        let debugScreenshot, debugHtml, debugUrl, adfBootState;
         try {
           debugUrl = page.url();
           debugScreenshot = (await page.screenshot({ fullPage: true })).toString('base64');
           debugHtml = await page.content();
+          // Capture ADF boot diagnostics to help debug splash/boot issues
+          adfBootState = await page.evaluate(() => {
+            const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
+            return {
+              splashPresent: !!splash,
+              splashVisible: splash ? window.getComputedStyle(splash).display !== 'none' : false,
+              adfPageReady: !!(window.AdfPage?.PAGE),
+              adfRichUIPeer: !!(window.AdfRichUIPeer),
+              afDocumentPresent: !!document.querySelector('.af_document'),
+              tableCount: document.querySelectorAll('table').length,
+              bodyTextLength: document.body?.innerText?.length || 0,
+              title: document.title,
+            };
+          });
         } catch { /* best effort */ }
 
         const err = new Error(
@@ -337,6 +393,7 @@ export class TeeClient {
           url: debugUrl,
           screenshotBase64: debugScreenshot,
           htmlSnippet: (debugHtml || '').slice(0, 8000),
+          adfBootState,
         };
         throw err;
       }
@@ -533,8 +590,29 @@ export class TeeClient {
         }
       }
 
-      // Wait for ADF application to fully render
+      // Wait for ADF application to fully boot (same multi-phase approach as fetch)
       await page.waitForLoadState('networkidle', { timeout: 35_000 });
+
+      // Wait for ADF splash screen to disappear
+      try {
+        await page.waitForFunction(() => {
+          const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
+          if (!splash) return true;
+          const style = window.getComputedStyle(splash);
+          return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+        }, { timeout: 30_000 });
+      } catch { /* splash may already be gone */ }
+
+      // Wait for ADF framework to initialize
+      try {
+        await page.waitForFunction(
+          () => !!(window.AdfPage?.PAGE || window.AdfRichUIPeer || document.querySelector('.af_document')),
+          { timeout: 15_000 }
+        );
+      } catch { /* continue anyway */ }
+
+      // Second networkidle after ADF PPR cycle
+      await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
       // Navigate to the XML import/upload page.
       // ADF portal typically has a navigation menu or link for XML import.
