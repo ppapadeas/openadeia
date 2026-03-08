@@ -30,6 +30,7 @@ const { mockDb, mockChain } = vi.hoisted(() => {
   };
   const mockDb = Object.assign(vi.fn(() => mockChain), {
     fn: { now: vi.fn(() => new Date().toISOString()) },
+    transaction: vi.fn(async (cb) => cb(Object.assign(vi.fn(() => mockChain), mockChain))),
   });
   return { mockDb, mockChain };
 });
@@ -43,16 +44,31 @@ const { MockTeeClient } = vi.hoisted(() => {
       this.loginFn = vi.fn().mockResolvedValue({ ok: true });
       this.fetchFn = vi.fn().mockResolvedValue([]);
       this.fetchDetailsFn = vi.fn().mockResolvedValue(null);
+      this.submitFn = vi.fn().mockResolvedValue({ success: true, tee_permit_code: null, tee_submission_ref: null });
     }
     login() { return this.loginFn(); }
     fetchMyApplications() { return this.fetchFn(); }
     fetchApplicationDetails(code) { return this.fetchDetailsFn(code); }
+    submitApplication(xml, projectId) { return this.submitFn(xml, projectId); }
   }
   return { MockTeeClient };
 });
 
 // We'll control the mock instance via a module-level variable
 let teeClientInstance;
+const mockAssembleSubmissionData = vi.fn().mockResolvedValue({
+  project: { id: 1, aitisi_type_code: 1, yd_id: 1, dimos_aa: 1, title: 'Test' },
+  property: { addr: 'Test', city: 'Test', zip_code: '12345' },
+  ekdosi: {},
+  owners: [],
+  engineers: [],
+  docRights: [],
+  approvals: [],
+  approvalsExt: [],
+  parkings: [],
+  prevPraxis: [],
+});
+
 vi.mock('../../src/services/tee-client.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -61,8 +77,13 @@ vi.mock('../../src/services/tee-client.js', async (importOriginal) => {
       teeClientInstance = new MockTeeClient(...args);
       return teeClientInstance;
     }),
+    assembleSubmissionData: (...args) => mockAssembleSubmissionData(...args),
   };
 });
+
+vi.mock('../../src/utils/xml-generator.js', () => ({
+  generateXML: vi.fn().mockReturnValue('<?xml version="1.0"?><AITISI></AITISI>'),
+}));
 
 // ── Import app after mocks are set up ────────────────────────────────
 import { buildApp } from '../../src/app.js';
@@ -728,5 +749,156 @@ describe('POST /api/tee/refresh/:id', () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.json().error).toContain('TEE portal unreachable');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// POST /api/tee/submit/:id
+// ═════════════════════════════════════════════════════════════════════
+
+describe('POST /api/tee/submit/:id', () => {
+  let app;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await buildApp();
+    await app.ready();
+  });
+
+  afterAll(async () => { await app?.close(); });
+
+  it('returns 401 without JWT', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/tee/submit/1' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns 404 when project does not exist', async () => {
+    const token = app.jwt.sign({ id: 1 });
+    mockChain.first.mockResolvedValueOnce(null);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tee/submit/999',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 422 when project is not at submission stage', async () => {
+    const token = app.jwt.sign({ id: 1 });
+    mockChain.first.mockResolvedValueOnce({
+      id: 1, stage: 'data_collection', deleted: false,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tee/submit/1',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toContain('Υποβολή');
+  });
+
+  it('returns 422 when user has no TEE credentials', async () => {
+    const token = app.jwt.sign({ id: 1 });
+    // Project at submission stage
+    mockChain.first
+      .mockResolvedValueOnce({ id: 1, stage: 'submission', deleted: false })
+      // User without TEE credentials
+      .mockResolvedValueOnce({ id: 1, tee_username: null, tee_password_enc: null });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tee/submit/1',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toContain('ΤΕΕ');
+  });
+
+  it('returns 502 when TEE submission fails', async () => {
+    const token = app.jwt.sign({ id: 1 });
+    mockChain.first
+      .mockResolvedValueOnce({ id: 1, stage: 'submission', deleted: false })
+      .mockResolvedValueOnce({
+        id: 1,
+        tee_username: 'engineer@tee.gr',
+        tee_password_enc: encryptTeePassword('pass123'),
+      });
+
+    const { TeeClient } = await import('../../src/services/tee-client.js');
+    TeeClient.mockImplementationOnce(() => ({
+      submitApplication: vi.fn().mockRejectedValue(
+        new Error('Δεν βρέθηκε η σελίδα εισαγωγής XML στο e-Adeies.'),
+      ),
+    }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tee/submit/1',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toContain('XML');
+  });
+
+  it('returns 422 for credential errors during submission', async () => {
+    const token = app.jwt.sign({ id: 1 });
+    mockChain.first
+      .mockResolvedValueOnce({ id: 1, stage: 'submission', deleted: false })
+      .mockResolvedValueOnce({
+        id: 1,
+        tee_username: 'engineer@tee.gr',
+        tee_password_enc: encryptTeePassword('wrong-pass'),
+      });
+
+    const credErr = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies.');
+    credErr.credentialError = true;
+
+    const { TeeClient } = await import('../../src/services/tee-client.js');
+    TeeClient.mockImplementationOnce(() => ({
+      submitApplication: vi.fn().mockRejectedValue(credErr),
+    }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tee/submit/1',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.statusCode).not.toBe(401);
+  });
+
+  it('returns success and advances stage on successful submission', async () => {
+    const token = app.jwt.sign({ id: 1 });
+    mockChain.first
+      .mockResolvedValueOnce({ id: 1, stage: 'submission', deleted: false })
+      .mockResolvedValueOnce({
+        id: 1,
+        tee_username: 'engineer@tee.gr',
+        tee_password_enc: encryptTeePassword('correct-pass'),
+      });
+
+    const { TeeClient } = await import('../../src/services/tee-client.js');
+    TeeClient.mockImplementationOnce(() => ({
+      submitApplication: vi.fn().mockResolvedValue({
+        success: true,
+        tee_permit_code: '2026/12345',
+        tee_submission_ref: 'ΠΡΤ-2026-001',
+      }),
+    }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/tee/submit/1',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.success).toBe(true);
+    expect(body.stage).toBe('review');
+    expect(body.tee_permit_code).toBe('2026/12345');
+    expect(body.tee_submission_ref).toBe('ΠΡΤ-2026-001');
   });
 });

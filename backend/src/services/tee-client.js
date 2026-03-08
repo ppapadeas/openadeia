@@ -11,6 +11,12 @@
  *      -> failure: stays on sso.tee.gr (finalUrl still contains sso.tee.gr)
  */
 
+import { writeFile, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import db from '../config/database.js';
+import { generateXML } from '../utils/xml-generator.js';
+
 const BASE_URL   = process.env.TEE_API_BASE || 'https://services.tee.gr';
 const SSO_URL    = process.env.TEE_SSO_BASE || 'https://sso.tee.gr';
 const USER_AGENT = 'OpenAdeia/1.2 (openadeia.org)';
@@ -160,8 +166,12 @@ export class TeeClient {
   // We use a headless Chromium browser (via playwright-core) to:
   //   1. Navigate to the portal (OAM SSO redirects to login page)
   //   2. Fill credentials and submit
-  //   3. Wait for ADF to finish loading the permit table
-  //   4. Extract rows from the fully-rendered DOM
+  //   3. Wait for ADF rich table component to populate with data rows
+  //   4. Scroll through the virtual-scrolling table to collect all rows
+  //   5. Extract permit data from the fully-rendered DOM
+  //
+  // The ADF table component (pt1:r1:0:pc1:resId1) uses virtual scrolling
+  // (viewportSize ~24 rows rendered at a time). We must scroll to collect all.
   //
   // Throws err.credentialError = true when credentials are rejected by OAM.
   async fetchMyApplications() {
@@ -175,8 +185,6 @@ export class TeeClient {
     let browser;
     try {
       browser = await chromium.launch({
-        // Use Playwright's bundled Chromium by default (version-matched, reliable).
-        // Set CHROMIUM_EXECUTABLE_PATH to override (e.g. for local dev without npm install playwright).
         ...(process.env.CHROMIUM_EXECUTABLE_PATH
           ? { executablePath: process.env.CHROMIUM_EXECUTABLE_PATH }
           : {}),
@@ -195,7 +203,7 @@ export class TeeClient {
     try {
       const context = await browser.newContext({ userAgent: USER_AGENT, locale: 'el-GR' });
       const page    = await context.newPage();
-      page.setDefaultTimeout(30_000);
+      page.setDefaultTimeout(45_000);
 
       // Navigate to the ADF portal — OAM SSO will redirect to the login page
       await page.goto(`${BASE_URL}/adeia/faces/main`, { waitUntil: 'domcontentloaded' });
@@ -206,11 +214,10 @@ export class TeeClient {
         await page.fill('input[name="password"]', this.password);
         await Promise.all([
           page.waitForURL(url => !url.includes('sso.tee.gr'), { timeout: 25_000 })
-            .catch(() => null), // resolve even if we time out; we check url below
+            .catch(() => null),
           page.press('input[name="password"]', 'Enter'),
         ]);
 
-        // Still on SSO page → wrong credentials
         if (page.url().includes('sso.tee.gr')) {
           const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
           err.credentialError = true;
@@ -218,36 +225,164 @@ export class TeeClient {
         }
       }
 
-      // Wait for the ADF application to fully render (all XHR complete)
-      await page.waitForLoadState('networkidle', { timeout: 35_000 });
+      // Wait for the ADF application to fully boot.
+      //
+      // Oracle ADF 12c has a multi-phase boot sequence:
+      //   1. Initial HTML with afr::Splash overlay (loading spinner)
+      //   2. boot-*.js loads and initializes the ADF Faces framework
+      //   3. Framework loads partition JS files (grid, form, nav, etc.)
+      //   4. ADF removes the splash overlay and renders the page shell
+      //   5. PPR (Partial Page Render) requests populate data components
+      //
+      // networkidle alone often fires after step 2/3 but before step 5.
+      // We must wait for the splash to disappear AND for the data to render.
 
-      // Extract permit rows from the rendered table DOM
-      const isPermitCode = (c) => /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
+      // Phase 1: wait for initial network burst to settle
+      await page.waitForLoadState('networkidle', { timeout: 40_000 });
 
+      // Phase 2: wait for ADF splash screen to disappear.
+      // The splash is rendered as an absolutely-positioned div with class
+      // containing "Splash" or id containing "Splash". When ADF finishes
+      // booting, it removes/hides this element.
+      try {
+        await page.waitForFunction(() => {
+          const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
+          // Splash is gone, or hidden, or opacity 0
+          if (!splash) return true;
+          const style = window.getComputedStyle(splash);
+          return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+        }, { timeout: 30_000 });
+      } catch {
+        // Splash may not exist at all (already gone) — continue
+      }
+
+      // Phase 3: wait for ADF framework object to be available.
+      // AdfPage.PAGE is the singleton created after framework init.
+      try {
+        await page.waitForFunction(
+          () => !!(window.AdfPage?.PAGE || window.AdfRichUIPeer || document.querySelector('.af_document')),
+          { timeout: 15_000 }
+        );
+      } catch {
+        // Framework object may use a different name — continue anyway
+      }
+
+      // Phase 4: wait for a second networkidle after ADF boot PPR cycle
+      await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+
+      // Wait for the ADF rich table to appear. The component renders as a <table>
+      // inside a scrollable container. Try multiple selectors: ADF component ID,
+      // ADF-generated table classes, or any data table with enough columns.
+      const tableSelectors = [
+        'table[id*="resId1"]',           // ADF component: pt1:r1:0:pc1:resId1
+        'table[id*="pc1"]',              // panel collection table
+        '.xgi',                          // ADF rich table class
+        'table.x1o',                     // alternative ADF table class
+        'div.af_table table',            // af:table wrapper
+        '[role="grid"]',                 // ARIA grid role (ADF tables)
+        'table',                         // fallback: any table
+      ];
+
+      let tableEl = null;
+      for (const sel of tableSelectors) {
+        try {
+          tableEl = await page.waitForSelector(sel, { timeout: 10_000, state: 'attached' });
+          if (tableEl) break;
+        } catch { /* try next selector */ }
+      }
+
+      // Give ADF extra time to populate table body via PPR after the table element exists
+      await page.waitForTimeout(3_000);
+      // Wait for any in-flight PPR requests to complete
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+      // Extract data rows from the ADF table.
+      // Strategy: find all <tr> elements that contain data cells (not headers),
+      // using broad matching to handle various ADF table markup patterns.
       const rows = await page.evaluate(() => {
-        /* global document -- this callback runs inside the browser, not Node.js */
-        function isPermitCode(c) {
-          return /^\d{4}\/\d+$/.test(c) || /^\d{6,}$/.test(c);
-        }
         const results = [];
-        for (const tr of document.querySelectorAll('tr')) {
-          const cells = [...tr.querySelectorAll('td')]
-            .map(td => (td.innerText || '').trim())
-            .filter(Boolean);
-          if (cells.length < 2) continue;
-          if (!cells.some(isPermitCode)) continue;
-          results.push(cells);
+        const seen = new Set(); // deduplicate by row text
+
+        // Permit code patterns: "2024/12345", "123456", or prefixed like "ΑΡ.123456"
+        function looksLikePermitCode(c) {
+          return /\d{4}\/\d+/.test(c) || /\d{5,}/.test(c);
         }
+
+        // Collect from all tables (ADF may render main + detail tables)
+        for (const table of document.querySelectorAll('table')) {
+          for (const tr of table.querySelectorAll('tr')) {
+            const cells = [...tr.querySelectorAll('td')]
+              .map(td => (td.innerText || td.textContent || '').trim())
+              .filter(Boolean);
+            if (cells.length < 2) continue;
+
+            // Skip header-like rows (all short text, no numbers)
+            if (cells.every(c => c.length < 3 && !/\d/.test(c))) continue;
+
+            // Build a key to deduplicate
+            const key = cells.join('|');
+            if (seen.has(key)) continue;
+
+            // Accept row if it has a permit code OR has enough data cells (4+)
+            // to be a real data row (some permit codes may be in non-standard format)
+            if (cells.some(looksLikePermitCode) || cells.length >= 4) {
+              seen.add(key);
+              results.push(cells);
+            }
+          }
+        }
+
+        // If the ADF table uses div-based rendering (af:treeTable or panelCollection),
+        // also check for role="row" elements
+        if (results.length === 0) {
+          for (const row of document.querySelectorAll('[role="row"]')) {
+            const cells = [...row.querySelectorAll('[role="gridcell"], [role="cell"]')]
+              .map(el => (el.innerText || el.textContent || '').trim())
+              .filter(Boolean);
+            if (cells.length < 2) continue;
+            const key = cells.join('|');
+            if (seen.has(key)) continue;
+            if (cells.some(looksLikePermitCode) || cells.length >= 4) {
+              seen.add(key);
+              results.push(cells);
+            }
+          }
+        }
+
         return results;
       });
 
+      // If virtual scrolling hid some rows, try scrolling the table container
+      // and re-extracting. ADF tables with viewportSize < totalRows only render
+      // a window of rows at a time.
+      if (tableEl && rows.length > 0) {
+        const moreRows = await this._scrollAndCollectRows(page, rows);
+        if (moreRows.length > rows.length) {
+          rows.length = 0;
+          rows.push(...moreRows);
+        }
+      }
+
       if (rows.length === 0) {
-        // Capture debug info so we can see what the ADF portal actually rendered
-        let debugScreenshot, debugHtml, debugUrl;
+        let debugScreenshot, debugHtml, debugUrl, adfBootState;
         try {
           debugUrl = page.url();
-          debugScreenshot = (await page.screenshot()).toString('base64');
+          debugScreenshot = (await page.screenshot({ fullPage: true })).toString('base64');
           debugHtml = await page.content();
+          // Capture ADF boot diagnostics to help debug splash/boot issues
+          adfBootState = await page.evaluate(() => {
+            const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
+            return {
+              splashPresent: !!splash,
+              splashVisible: splash ? window.getComputedStyle(splash).display !== 'none' : false,
+              adfPageReady: !!(window.AdfPage?.PAGE),
+              adfRichUIPeer: !!(window.AdfRichUIPeer),
+              afDocumentPresent: !!document.querySelector('.af_document'),
+              tableCount: document.querySelectorAll('table').length,
+              bodyTextLength: document.body?.innerText?.length || 0,
+              title: document.title,
+            };
+          });
         } catch { /* best effort */ }
 
         const err = new Error(
@@ -257,28 +392,380 @@ export class TeeClient {
         err.teeDebug = {
           url: debugUrl,
           screenshotBase64: debugScreenshot,
+          htmlSnippet: (debugHtml || '').slice(0, 8000),
+          adfBootState,
+        };
+        throw err;
+      }
+
+      return this._parseTableRows(rows);
+    } finally {
+      await browser.close();
+    }
+  }
+
+  // Scroll through an ADF virtual-scrolling table to collect all rows.
+  // Returns the full deduplicated row set.
+  async _scrollAndCollectRows(page, initialRows) {
+    const allRows = new Map();
+    for (const cells of initialRows) {
+      allRows.set(cells.join('|'), cells);
+    }
+
+    // Find the scrollable container (ADF wraps the table body in a scrollable div)
+    const scrollContainer = await page.$('div[id*="pc1"] div[style*="overflow"]') ||
+                            await page.$('.af_table_data-body') ||
+                            await page.$('div[id*="resId1"]');
+
+    if (!scrollContainer) return initialRows;
+
+    // Scroll down in increments, collecting new rows each time
+    const maxScrollAttempts = 10;
+    for (let i = 0; i < maxScrollAttempts; i++) {
+      await page.evaluate(el => el?.scrollBy(0, 500), scrollContainer);
+      await page.waitForTimeout(1_500);
+      await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
+
+      const newRows = await page.evaluate(() => {
+        const results = [];
+        function looksLikePermitCode(c) {
+          return /\d{4}\/\d+/.test(c) || /\d{5,}/.test(c);
+        }
+        for (const tr of document.querySelectorAll('tr')) {
+          const cells = [...tr.querySelectorAll('td')]
+            .map(td => (td.innerText || td.textContent || '').trim())
+            .filter(Boolean);
+          if (cells.length < 2) continue;
+          if (cells.some(looksLikePermitCode) || cells.length >= 4) {
+            results.push(cells);
+          }
+        }
+        return results;
+      });
+
+      const prevSize = allRows.size;
+      for (const cells of newRows) {
+        allRows.set(cells.join('|'), cells);
+      }
+      // Stop scrolling when no new rows appear
+      if (allRows.size === prevSize) break;
+    }
+
+    return [...allRows.values()];
+  }
+
+  // Parse raw table cell arrays into structured application objects.
+  _parseTableRows(rows) {
+    function extractPermitCode(cells) {
+      for (const c of cells) {
+        // Standard format: 2024/12345
+        const m1 = c.match(/(\d{4}\/\d+)/);
+        if (m1) return m1[1];
+        // Numeric only: 123456+
+        const m2 = c.match(/(\d{5,})/);
+        if (m2) return m2[1];
+      }
+      return null;
+    }
+
+    // Detect column layout from the first row (ADF tables have consistent columns)
+    return rows
+      .map(cells => {
+        const code = extractPermitCode(cells);
+        if (!code) return null; // skip rows without a permit code
+
+        // Find status text (Greek keywords for permit stages)
+        const statusCell = cells.find(c =>
+          /εκδ|εγκρ|ελεγχ|υποβολ|υπογρ|ολοκλ|ακυρ|αναμον|ενεργ|προσωρ|πληρ|μελετ/i.test(c)
+        ) || '';
+
+        // Find address-like cell (contains street indicators or numbers with text)
+        const addressCell = cells.find(c =>
+          c !== code && c !== statusCell &&
+          (/οδ[οό]ς|λεωφ|πλατ|αριθμ|\d+\s*[α-ω]/i.test(c) || /\d+/.test(c) && c.length > 10)
+        ) || '';
+
+        // Find title/description (longest text cell that isn't code, status, or address)
+        const usedCells = new Set([code, statusCell, addressCell].filter(Boolean));
+        const titleCell = cells
+          .filter(c => !usedCells.has(c) && c.length > 5)
+          .sort((a, b) => b.length - a.length)[0]
+          || `Άδεια ΤΕΕ ${code}`;
+
+        // Find date-like cell
+        const dateCell = cells.find(c => /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(c));
+        let submissionDate = null;
+        if (dateCell) {
+          const dm = dateCell.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+          if (dm) {
+            const y = dm[3].length === 2 ? `20${dm[3]}` : dm[3];
+            submissionDate = `${y}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`;
+          }
+        }
+
+        // Find KAEK (12-digit cadastral code)
+        const kaekCell = cells.find(c => /\d{12}/.test(c));
+        const kaek = kaekCell ? (kaekCell.match(/(\d{12})/)?.[1] || '') : '';
+
+        return {
+          tee_permit_code: code,
+          title: titleCell,
+          aitisi_type_code: null,
+          yd_id: null,
+          dimos_aa: null,
+          address: addressCell,
+          city: '',
+          kaek,
+          tee_status: statusCell,
+          tee_status_code: '',
+          tee_submission_date: submissionDate,
+          is_continuation: false,
+          _raw: cells,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Submit an application to TEE e-Adeies by uploading generated XML.
+   * Uses Playwright to navigate the ADF portal and upload the XML file.
+   *
+   * @param {string} xmlString - Valid XML conforming to AdeiaAitisiInput.xsd
+   * @param {string} projectId - Project ID (used for temp file naming)
+   * @returns {{ success: boolean, tee_permit_code: string|null, tee_submission_ref: string|null }}
+   */
+  async submitApplication(xmlString, projectId) {
+    let chromium;
+    try {
+      ({ chromium } = await import('playwright-core'));
+    } catch {
+      throw new Error('Playwright δεν είναι διαθέσιμο στον server. Επικοινωνήστε με τη διαχείριση.');
+    }
+
+    // Write XML to a temp file for the file upload input
+    const tmpPath = join(tmpdir(), `openadeia-submit-${projectId}-${Date.now()}.xml`);
+    await writeFile(tmpPath, xmlString, 'utf-8');
+
+    let browser;
+    try {
+      browser = await chromium.launch({
+        ...(process.env.CHROMIUM_EXECUTABLE_PATH
+          ? { executablePath: process.env.CHROMIUM_EXECUTABLE_PATH }
+          : {}),
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
+      });
+    } catch (e) {
+      await unlink(tmpPath).catch(() => {});
+      throw new Error(`Αδυναμία εκκίνησης headless browser: ${e.message}`);
+    }
+
+    try {
+      const context = await browser.newContext({ userAgent: USER_AGENT, locale: 'el-GR' });
+      const page    = await context.newPage();
+      page.setDefaultTimeout(60_000);
+
+      // Navigate to the ADF portal — OAM SSO will redirect to the login page
+      await page.goto(`${BASE_URL}/adeia/faces/main`, { waitUntil: 'domcontentloaded' });
+
+      // Authenticate if on SSO login page
+      if (page.url().includes('sso.tee.gr')) {
+        await page.fill('input[name="username"]', this.username);
+        await page.fill('input[name="password"]', this.password);
+        await Promise.all([
+          page.waitForURL(url => !url.includes('sso.tee.gr'), { timeout: 25_000 })
+            .catch(() => null),
+          page.press('input[name="password"]', 'Enter'),
+        ]);
+
+        if (page.url().includes('sso.tee.gr')) {
+          const err = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
+          err.credentialError = true;
+          throw err;
+        }
+      }
+
+      // Wait for ADF application to fully boot (same multi-phase approach as fetch)
+      await page.waitForLoadState('networkidle', { timeout: 35_000 });
+
+      // Wait for ADF splash screen to disappear
+      try {
+        await page.waitForFunction(() => {
+          const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
+          if (!splash) return true;
+          const style = window.getComputedStyle(splash);
+          return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+        }, { timeout: 30_000 });
+      } catch { /* splash may already be gone */ }
+
+      // Wait for ADF framework to initialize
+      try {
+        await page.waitForFunction(
+          () => !!(window.AdfPage?.PAGE || window.AdfRichUIPeer || document.querySelector('.af_document')),
+          { timeout: 15_000 }
+        );
+      } catch { /* continue anyway */ }
+
+      // Second networkidle after ADF PPR cycle
+      await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+
+      // Navigate to the XML import/upload page.
+      // ADF portal typically has a navigation menu or link for XML import.
+      // Try common ADF selectors for the import/upload action.
+      const importSelectors = [
+        'a:has-text("Εισαγωγή XML")',
+        'a:has-text("Εισαγωγή")',
+        'a:has-text("Import XML")',
+        'a:has-text("Φόρτωση XML")',
+        'button:has-text("Εισαγωγή XML")',
+        'button:has-text("Εισαγωγή")',
+        '[id*="import" i]',
+        '[id*="eisagwg" i]',
+        '[id*="upload" i]',
+      ];
+
+      let foundImportLink = false;
+      for (const sel of importSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el && await el.isVisible()) {
+            await el.click();
+            await page.waitForLoadState('networkidle', { timeout: 15_000 });
+            foundImportLink = true;
+            break;
+          }
+        } catch { /* try next selector */ }
+      }
+
+      if (!foundImportLink) {
+        // Capture debug info for troubleshooting
+        let debugScreenshot, debugHtml;
+        try {
+          debugScreenshot = (await page.screenshot()).toString('base64');
+          debugHtml = await page.content();
+        } catch { /* best effort */ }
+
+        const err = new Error(
+          'Δεν βρέθηκε η σελίδα εισαγωγής XML στο e-Adeies. ' +
+          'Η δομή του portal μπορεί να έχει αλλάξει. Επικοινωνήστε με τη διαχείριση.'
+        );
+        err.teeDebug = {
+          url: page.url(),
+          screenshotBase64: debugScreenshot,
           htmlSnippet: (debugHtml || '').slice(0, 4000),
         };
         throw err;
       }
 
-      return rows.map(cells => {
-        const code = cells.find(isPermitCode);
-        return {
-          tee_permit_code: code,
-          title: cells.find(c => c !== code && c.length > 5) || `Αδεια ΤΕΕ ${code}`,
-          aitisi_type_code: null,
-          yd_id: null, dimos_aa: null,
-          address: '', city: '', kaek: '',
-          tee_status: cells.find(c => /εκδ|εγκρ|ελεγχ|υποβολ|υπογρ/i.test(c)) || '',
-          tee_status_code: '',
-          tee_submission_date: null,
-          is_continuation: false,
-          _raw: cells,
-        };
-      });
+      // Find the file input and upload the XML
+      // ADF uses <input type="file"> or af:inputFile which renders as <input type="file">
+      const fileInputSelectors = [
+        'input[type="file"]',
+        'input[name*="file" i]',
+        'input[name*="xml" i]',
+        'input[id*="file" i]',
+        'input[id*="upload" i]',
+      ];
+
+      let fileInput = null;
+      for (const sel of fileInputSelectors) {
+        fileInput = await page.$(sel);
+        if (fileInput) break;
+      }
+
+      if (!fileInput) {
+        let debugScreenshot;
+        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch {}
+        const err = new Error('Δεν βρέθηκε πεδίο αρχείου στη σελίδα εισαγωγής XML.');
+        err.teeDebug = { url: page.url(), screenshotBase64: debugScreenshot };
+        throw err;
+      }
+
+      await fileInput.setInputFiles(tmpPath);
+
+      // Click the submit/upload button
+      const submitSelectors = [
+        'button:has-text("Υποβολή")',
+        'button:has-text("Αποστολή")',
+        'button:has-text("Φόρτωση")',
+        'button:has-text("Submit")',
+        'button:has-text("Upload")',
+        'input[type="submit"]',
+        'button[type="submit"]',
+        '[id*="submit" i]',
+      ];
+
+      let submitted = false;
+      for (const sel of submitSelectors) {
+        try {
+          const btn = await page.$(sel);
+          if (btn && await btn.isVisible()) {
+            await btn.click();
+            await page.waitForLoadState('networkidle', { timeout: 45_000 });
+            submitted = true;
+            break;
+          }
+        } catch { /* try next */ }
+      }
+
+      if (!submitted) {
+        let debugScreenshot;
+        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch {}
+        const err = new Error('Δεν βρέθηκε κουμπί υποβολής στη σελίδα εισαγωγής XML.');
+        err.teeDebug = { url: page.url(), screenshotBase64: debugScreenshot };
+        throw err;
+      }
+
+      // Check for errors on the result page
+      const pageText = await page.textContent('body');
+      const errorPatterns = [/σφάλμα/i, /αποτυχ/i, /error/i, /invalid/i, /λάθος/i];
+      for (const pattern of errorPatterns) {
+        if (pattern.test(pageText)) {
+          // Check if it's a real error vs just a label containing the word
+          const errorElSelectors = ['.error', '.af_message_error', '[class*="error" i]', '.message-error'];
+          for (const esel of errorElSelectors) {
+            const errorEl = await page.$(esel);
+            if (errorEl) {
+              const errorText = await errorEl.textContent();
+              if (errorText?.trim()) {
+                const err = new Error(`Σφάλμα κατά την υποβολή στο ΤΕΕ: ${errorText.trim().slice(0, 300)}`);
+                err.teeSubmissionError = true;
+                throw err;
+              }
+            }
+          }
+        }
+      }
+
+      // Extract permit code / confirmation reference from the result page
+      let tee_permit_code = null;
+      let tee_submission_ref = null;
+
+      // Look for permit code patterns (e.g., "2024/12345" or "123456")
+      const codeMatch = pageText.match(/(?:κωδικ[οό]ς|αριθμ[οό]ς|code)[:\s]*(\d{4}\/\d+|\d{6,})/i);
+      if (codeMatch) {
+        tee_permit_code = codeMatch[1];
+      }
+
+      // Look for protocol/reference number
+      const refMatch = pageText.match(/(?:πρωτ[οό]κολλο|αρ\.|αριθμ)[:\s]*([A-Za-z0-9\-\/]+)/i);
+      if (refMatch) {
+        tee_submission_ref = refMatch[1];
+      }
+
+      return {
+        success: true,
+        tee_permit_code,
+        tee_submission_ref,
+      };
     } finally {
-      await browser.close();
+      await browser?.close();
+      await unlink(tmpPath).catch(() => {});
     }
   }
 
@@ -349,6 +836,40 @@ export function teeStatusToStage(teeStatus, teeStatusCode) {
   if (s.includes('υπογραφ')                     || c === '2') return 'signatures';
   if (s.includes('μελετ')                       || c === '1') return 'studies';
   return 'data_collection';
+}
+
+// ── Assemble project data for TEE XML submission ─────────────────
+export async function assembleSubmissionData(projectId) {
+  const project = await db('projects').where({ id: projectId }).first();
+  if (!project) throw new Error('Project not found');
+
+  const [property, ekdosi, docRights, approvals, prevPraxis] = await Promise.all([
+    db('properties').where({ project_id: projectId }).first(),
+    db('ekdosi').where({ project_id: projectId }).first(),
+    db('doc_rights').where({ project_id: projectId }),
+    db('approvals').where({ project_id: projectId }),
+    db('prev_praxis').where({ project_id: projectId }),
+  ]);
+
+  const owners = project.client_id
+    ? await db('clients').where({ id: project.client_id })
+    : [];
+  const engineers = project.created_by
+    ? await db('users').where({ id: project.created_by })
+    : [];
+
+  return {
+    project,
+    property,
+    ekdosi,
+    owners,
+    engineers,
+    docRights,
+    approvals,
+    approvalsExt: [],
+    parkings: [],
+    prevPraxis,
+  };
 }
 
 // ── Map TEE aitisi_type_code -> our permit type ───────────────────
