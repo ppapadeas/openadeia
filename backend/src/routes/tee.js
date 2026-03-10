@@ -12,6 +12,7 @@ import db from '../config/database.js';
 import { decryptTeePassword } from './auth.js';
 import { TeeClient, teeStatusToStage, teeTypeCodeToPermitType, assembleSubmissionData } from '../services/tee-client.js';
 import { generateXML } from '../utils/xml-generator.js';
+import { createJob, getJob, updateJob, completeJob, failJob } from '../services/job-store.js';
 
 export default async function teeRoute(fastify) {
   // All TEE routes require authentication
@@ -30,8 +31,12 @@ export default async function teeRoute(fastify) {
   });
 
   // ── POST /api/tee/sync ──────────────────────────────────────────────
-  // Authenticates with TEE portal and fetches all engineer applications.
-  // Returns the raw list — does NOT auto-import, lets user choose which to import.
+  // Kicks off an async TEE sync job. Returns 202 with a jobId immediately.
+  // The client polls GET /api/tee/sync/:jobId to check status.
+  //
+  // Why async: Playwright scrape can take 30-60s. If a reverse proxy
+  // (nginx/Cloudflare) has a shorter timeout, the client gets a 502 before
+  // the handler finishes. Returning 202 immediately avoids this.
   fastify.post('/sync', auth, async (req, reply) => {
     const user = await db('users').where({ id: req.user.id }).first();
 
@@ -46,44 +51,77 @@ export default async function teeRoute(fastify) {
       return reply.code(500).send({ error: 'Αδυναμία αποκρυπτογράφησης κωδικού ΤΕΕ.' });
     }
 
-    const client = new TeeClient(user.tee_username, teePassword);
+    const job = createJob();
+    updateJob(job.id, { status: 'running' });
 
-    // fetchMyApplications handles the full flow (SSO login + ADF scrape via headless browser).
-    // err.credentialError = true means wrong username/password → return 422.
-    // 422 not 401 — TEE portal auth failure is NOT the same as our session expiry.
-    // A 401 here would trigger the frontend auto-logout interceptor incorrectly.
-    let applications;
-    try {
-      applications = await client.fetchMyApplications();
-    } catch (err) {
-      if (err.teeDebug) {
-        req.log.warn({ teeDebug: err.teeDebug }, 'TEE login failed — OAM debug info');
+    // Fire-and-forget — the heavy Playwright work runs in background
+    const userId = req.user.id;
+    const logger = req.log;
+    (async () => {
+      try {
+        const client = new TeeClient(user.tee_username, teePassword);
+        const applications = await client.fetchMyApplications();
+
+        // Cross-reference with existing projects to mark already-imported ones
+        const existingCodes = await db('projects')
+          .whereNotNull('tee_permit_code')
+          .pluck('tee_permit_code');
+        const importedSet = new Set(existingCodes);
+
+        const enriched = applications.map(app => ({
+          ...app,
+          already_imported: importedSet.has(app.tee_permit_code),
+        }));
+
+        completeJob(job.id, {
+          synced_at: new Date().toISOString(),
+          count: enriched.length,
+          applications: enriched,
+        });
+      } catch (err) {
+        if (err.teeDebug) {
+          logger.warn({ teeDebug: err.teeDebug }, 'TEE sync job failed — OAM debug info');
+        }
+        if (!err.credentialError) {
+          Sentry.captureException(err, { extra: { teeDebug: err.teeDebug, jobId: job.id } });
+        }
+        failJob(job.id, {
+          message: err.message,
+          credentialError: !!err.credentialError,
+        });
       }
-      // Capture non-credential errors to Sentry so we can see what Playwright/TEE errors look like
-      if (!err.credentialError) {
-        Sentry.captureException(err, { extra: { teeDebug: err.teeDebug } });
-      }
-      const statusCode = err.credentialError ? 422 : 502;
-      return reply.code(statusCode).send({ error: err.message });
+    })();
+
+    reply.code(202).send({ jobId: job.id, status: 'running' });
+  });
+
+  // ── GET /api/tee/sync/:jobId ──────────────────────────────────────
+  // Poll for async sync job status.
+  // Returns:
+  //   - 200 { status: 'running' }             — still working
+  //   - 200 { status: 'completed', ... }       — done, includes applications
+  //   - 200 { status: 'failed', error: ... }   — error with details
+  //   - 404                                    — unknown/expired jobId
+  fastify.get('/sync/:jobId', auth, async (req, reply) => {
+    const job = getJob(req.params.jobId);
+    if (!job) {
+      return reply.code(404).send({ error: 'Job not found or expired' });
     }
 
-    // Cross-reference with existing projects to mark already-imported ones
-    const existingCodes = await db('projects')
-      .whereNotNull('tee_permit_code')
-      .pluck('tee_permit_code');
-    const importedSet = new Set(existingCodes);
+    if (job.status === 'running' || job.status === 'pending') {
+      return reply.send({ jobId: job.id, status: job.status });
+    }
 
-    const enriched = applications.map(app => ({
-      ...app,
-      already_imported: importedSet.has(app.tee_permit_code),
-    }));
+    if (job.status === 'completed') {
+      return reply.send({ jobId: job.id, status: 'completed', ...job.result });
+    }
 
-    // Store sync result in a tee_sync_cache table (or just return it)
-    // For MVP we return it directly — the user picks what to import
-    reply.send({
-      synced_at: new Date().toISOString(),
-      count: enriched.length,
-      applications: enriched,
+    // status === 'failed'
+    const statusCode = job.error?.credentialError ? 422 : 502;
+    return reply.code(statusCode).send({
+      jobId: job.id,
+      status: 'failed',
+      error: job.error?.message || 'Unknown error',
     });
   });
 

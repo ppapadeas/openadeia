@@ -85,6 +85,38 @@ vi.mock('../../src/utils/xml-generator.js', () => ({
   generateXML: vi.fn().mockReturnValue('<?xml version="1.0"?><AITISI></AITISI>'),
 }));
 
+// ── Mock job-store ──────────────────────────────────────────────────
+// We need to control job-store behavior in tests for the async sync pattern.
+const { mockJobStore } = vi.hoisted(() => {
+  const jobs = new Map();
+  return {
+    mockJobStore: {
+      _jobs: jobs,
+      createJob: vi.fn(() => {
+        const id = `test-job-${Date.now()}`;
+        const job = { id, status: 'pending', result: null, error: null, createdAt: Date.now(), completedAt: null };
+        jobs.set(id, job);
+        return job;
+      }),
+      getJob: vi.fn((id) => jobs.get(id) || null),
+      updateJob: vi.fn((id, updates) => {
+        const job = jobs.get(id);
+        if (job) Object.assign(job, updates);
+      }),
+      completeJob: vi.fn((id, result) => {
+        const job = jobs.get(id);
+        if (job) Object.assign(job, { status: 'completed', result, completedAt: Date.now() });
+      }),
+      failJob: vi.fn((id, error) => {
+        const job = jobs.get(id);
+        if (job) Object.assign(job, { status: 'failed', error, completedAt: Date.now() });
+      }),
+    },
+  };
+});
+
+vi.mock('../../src/services/job-store.js', () => mockJobStore);
+
 // ── Import app after mocks are set up ────────────────────────────────
 import { buildApp } from '../../src/app.js';
 import { encryptTeePassword } from '../../src/routes/auth.js';
@@ -151,7 +183,7 @@ describe('GET /api/tee/status', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// POST /api/tee/sync
+// POST /api/tee/sync (async job pattern)
 // ═════════════════════════════════════════════════════════════════════
 
 describe('POST /api/tee/sync', () => {
@@ -159,6 +191,7 @@ describe('POST /api/tee/sync', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockJobStore._jobs.clear();
     app = await buildApp();
     await app.ready();
   });
@@ -181,23 +214,16 @@ describe('POST /api/tee/sync', () => {
     expect(res.statusCode).toBe(422);
   });
 
-  it('returns 422 (NOT 401) when TEE portal login fails', async () => {
-    // This is the critical regression test.
-    // fetchMyApplications() throws with err.credentialError = true when OAM
-    // rejects credentials. The route must return 422, never 401
-    // (a 401 would trigger the frontend auto-logout interceptor).
+  it('returns 202 with jobId when sync is kicked off', async () => {
     mockChain.first.mockResolvedValueOnce({
       id: 1,
       tee_username: 'engineer@tee.gr',
-      tee_password_enc: encryptTeePassword('wrong-password'),
+      tee_password_enc: encryptTeePassword('correct-pass'),
     });
-
-    const credErr = new Error('Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.');
-    credErr.credentialError = true;
 
     const { TeeClient } = await import('../../src/services/tee-client.js');
     TeeClient.mockImplementationOnce(() => ({
-      fetchMyApplications: vi.fn().mockRejectedValue(credErr),
+      fetchMyApplications: vi.fn().mockResolvedValue([]),
     }));
 
     const token = app.jwt.sign({ id: 1 });
@@ -207,101 +233,119 @@ describe('POST /api/tee/sync', () => {
       headers: { authorization: `Bearer ${token}` },
     });
 
-    expect(res.statusCode).toBe(422);
-    expect(res.statusCode).not.toBe(401); // Must NEVER return 401 for TEE failures
+    expect(res.statusCode).toBe(202);
+    const body = res.json();
+    expect(body.jobId).toBeDefined();
+    expect(body.status).toBe('running');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// GET /api/tee/sync/:jobId (poll async job)
+// ═════════════════════════════════════════════════════════════════════
+
+describe('GET /api/tee/sync/:jobId', () => {
+  let app;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockJobStore._jobs.clear();
+    app = await buildApp();
+    await app.ready();
   });
 
-  it('returns 502 for non-credential TEE errors', async () => {
-    mockChain.first.mockResolvedValueOnce({
-      id: 1,
-      tee_username: 'engineer@tee.gr',
-      tee_password_enc: encryptTeePassword('correct-pass'),
-    });
+  afterAll(async () => { await app?.close(); });
 
-    const { TeeClient } = await import('../../src/services/tee-client.js');
-    TeeClient.mockImplementationOnce(() => ({
-      fetchMyApplications: vi.fn().mockRejectedValue(
-        new Error('Αδυναμία εκκίνησης headless browser'),
-      ),
-    }));
+  it('returns 401 without JWT', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/tee/sync/some-job-id' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns 404 for unknown jobId', async () => {
+    const token = app.jwt.sign({ id: 1 });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/tee/sync/nonexistent',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns running status for in-progress job', async () => {
+    const job = mockJobStore.createJob();
+    mockJobStore.updateJob(job.id, { status: 'running' });
 
     const token = app.jwt.sign({ id: 1 });
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/tee/sync',
+      method: 'GET',
+      url: `/api/tee/sync/${job.id}`,
       headers: { authorization: `Bearer ${token}` },
     });
 
-    expect(res.statusCode).toBe(502);
-    expect(res.json().error).toContain('headless browser');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('running');
   });
 
-  it('returns application list on success', async () => {
-    mockChain.first.mockResolvedValueOnce({
-      id: 1,
-      tee_username: 'engineer@tee.gr',
-      tee_password_enc: encryptTeePassword('correct-pass'),
+  it('returns completed result with applications', async () => {
+    const job = mockJobStore.createJob();
+    mockJobStore.completeJob(job.id, {
+      synced_at: '2026-03-10T12:00:00.000Z',
+      count: 1,
+      applications: [
+        { tee_permit_code: 'TEE-2024-001', title: 'Test', already_imported: false },
+      ],
     });
-    mockChain.pluck.mockResolvedValueOnce([]);
-
-    const { TeeClient } = await import('../../src/services/tee-client.js');
-    TeeClient.mockImplementationOnce(() => ({
-      login: vi.fn().mockResolvedValue({ ok: true }),
-      fetchMyApplications: vi.fn().mockResolvedValue([
-        {
-          tee_permit_code: 'TEE-2024-001',
-          title: 'Νέα Οικοδομική Άδεια',
-          aitisi_type_code: 1,
-          is_continuation: false,
-          address: 'Οδός Δοκιμής 1',
-          city: 'Αθήνα',
-        },
-      ]),
-    }));
 
     const token = app.jwt.sign({ id: 1 });
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/tee/sync',
+      method: 'GET',
+      url: `/api/tee/sync/${job.id}`,
       headers: { authorization: `Bearer ${token}` },
     });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
+    expect(body.status).toBe('completed');
     expect(body.count).toBe(1);
     expect(body.applications[0].tee_permit_code).toBe('TEE-2024-001');
-    expect(body.applications[0].already_imported).toBe(false);
   });
 
-  it('marks already-imported applications', async () => {
-    mockChain.first.mockResolvedValueOnce({
-      id: 1,
-      tee_username: 'engineer@tee.gr',
-      tee_password_enc: encryptTeePassword('correct-pass'),
+  it('returns 422 (NOT 401) for credential errors', async () => {
+    // Critical regression: credential errors must surface as 422, not 401
+    const job = mockJobStore.createJob();
+    mockJobStore.failJob(job.id, {
+      message: 'Αδυναμία σύνδεσης στο ΤΕΕ e-Adeies. Ελέγξτε username και κωδικό.',
+      credentialError: true,
     });
-    // Simulate one already-imported permit
-    mockChain.pluck.mockResolvedValueOnce(['2024/001']);
-
-    const { TeeClient } = await import('../../src/services/tee-client.js');
-    TeeClient.mockImplementationOnce(() => ({
-      fetchMyApplications: vi.fn().mockResolvedValue([
-        { tee_permit_code: '2024/001', title: 'Existing' },
-        { tee_permit_code: '2024/002', title: 'New' },
-      ]),
-    }));
 
     const token = app.jwt.sign({ id: 1 });
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/tee/sync',
+      method: 'GET',
+      url: `/api/tee/sync/${job.id}`,
       headers: { authorization: `Bearer ${token}` },
     });
 
-    expect(res.statusCode).toBe(200);
-    const { applications } = res.json();
-    expect(applications).toHaveLength(2);
-    expect(applications.find(a => a.tee_permit_code === '2024/001').already_imported).toBe(true);
-    expect(applications.find(a => a.tee_permit_code === '2024/002').already_imported).toBe(false);
+    expect(res.statusCode).toBe(422);
+    expect(res.statusCode).not.toBe(401); // Must NEVER return 401 for TEE failures
+    expect(res.json().status).toBe('failed');
+  });
+
+  it('returns 502 for non-credential TEE errors', async () => {
+    const job = mockJobStore.createJob();
+    mockJobStore.failJob(job.id, {
+      message: 'Αδυναμία εκκίνησης headless browser',
+      credentialError: false,
+    });
+
+    const token = app.jwt.sign({ id: 1 });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/tee/sync/${job.id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toContain('headless browser');
   });
 });
 

@@ -15,7 +15,8 @@ import { writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import db from '../config/database.js';
-import { generateXML } from '../utils/xml-generator.js';
+// generateXML is used by routes that call assembleSubmissionData, not directly here
+// import { generateXML } from '../utils/xml-generator.js';
 
 const BASE_URL   = process.env.TEE_API_BASE || 'https://services.tee.gr';
 const SSO_URL    = process.env.TEE_SSO_BASE || 'https://sso.tee.gr';
@@ -245,6 +246,7 @@ export class TeeClient {
       // containing "Splash" or id containing "Splash". When ADF finishes
       // booting, it removes/hides this element.
       try {
+        /* eslint-disable no-undef */
         await page.waitForFunction(() => {
           const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
           // Splash is gone, or hidden, or opacity 0
@@ -252,6 +254,7 @@ export class TeeClient {
           const style = window.getComputedStyle(splash);
           return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
         }, { timeout: 30_000 });
+        /* eslint-enable no-undef */
       } catch {
         // Splash may not exist at all (already gone) — continue
       }
@@ -260,6 +263,7 @@ export class TeeClient {
       // AdfPage.PAGE is the singleton created after framework init.
       try {
         await page.waitForFunction(
+          /* eslint-disable-next-line no-undef */
           () => !!(window.AdfPage?.PAGE || window.AdfRichUIPeer || document.querySelector('.af_document')),
           { timeout: 15_000 }
         );
@@ -299,6 +303,7 @@ export class TeeClient {
       // Extract data rows from the ADF table.
       // Strategy: find all <tr> elements that contain data cells (not headers),
       // using broad matching to handle various ADF table markup patterns.
+      /* eslint-disable no-undef */
       const rows = await page.evaluate(() => {
         const results = [];
         const seen = new Set(); // deduplicate by row text
@@ -335,7 +340,7 @@ export class TeeClient {
         // If the ADF table uses div-based rendering (af:treeTable or panelCollection),
         // also check for role="row" elements
         if (results.length === 0) {
-          for (const row of document.querySelectorAll('[role="row"]')) {
+          for (const row of document.querySelectorAll('[role="row"]')) { // eslint-disable-line no-shadow
             const cells = [...row.querySelectorAll('[role="gridcell"], [role="cell"]')]
               .map(el => (el.innerText || el.textContent || '').trim())
               .filter(Boolean);
@@ -351,6 +356,7 @@ export class TeeClient {
 
         return results;
       });
+      /* eslint-enable no-undef */
 
       // If virtual scrolling hid some rows, try scrolling the table container
       // and re-extracting. ADF tables with viewportSize < totalRows only render
@@ -370,6 +376,7 @@ export class TeeClient {
           debugScreenshot = (await page.screenshot({ fullPage: true })).toString('base64');
           debugHtml = await page.content();
           // Capture ADF boot diagnostics to help debug splash/boot issues
+          /* eslint-disable no-undef */
           adfBootState = await page.evaluate(() => {
             const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
             return {
@@ -383,6 +390,7 @@ export class TeeClient {
               title: document.title,
             };
           });
+          /* eslint-enable no-undef */
         } catch { /* best effort */ }
 
         const err = new Error(
@@ -426,6 +434,7 @@ export class TeeClient {
       await page.waitForTimeout(1_500);
       await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
 
+      /* eslint-disable no-undef */
       const newRows = await page.evaluate(() => {
         const results = [];
         function looksLikePermitCode(c) {
@@ -442,6 +451,7 @@ export class TeeClient {
         }
         return results;
       });
+      /* eslint-enable no-undef */
 
       const prevSize = allRows.size;
       for (const cells of newRows) {
@@ -493,10 +503,10 @@ export class TeeClient {
           || `Άδεια ΤΕΕ ${code}`;
 
         // Find date-like cell
-        const dateCell = cells.find(c => /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(c));
+        const dateCell = cells.find(c => /\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}/.test(c));
         let submissionDate = null;
         if (dateCell) {
-          const dm = dateCell.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+          const dm = dateCell.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
           if (dm) {
             const y = dm[3].length === 2 ? `20${dm[3]}` : dm[3];
             submissionDate = `${y}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`;
@@ -595,17 +605,20 @@ export class TeeClient {
 
       // Wait for ADF splash screen to disappear
       try {
+        /* eslint-disable no-undef */
         await page.waitForFunction(() => {
           const splash = document.querySelector('[id*="Splash"], [class*="Splash"], .AFBlockingGlassPane');
           if (!splash) return true;
           const style = window.getComputedStyle(splash);
           return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
         }, { timeout: 30_000 });
+        /* eslint-enable no-undef */
       } catch { /* splash may already be gone */ }
 
       // Wait for ADF framework to initialize
       try {
         await page.waitForFunction(
+          /* eslint-disable-next-line no-undef */
           () => !!(window.AdfPage?.PAGE || window.AdfRichUIPeer || document.querySelector('.af_document')),
           { timeout: 15_000 }
         );
@@ -680,7 +693,7 @@ export class TeeClient {
 
       if (!fileInput) {
         let debugScreenshot;
-        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch {}
+        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch { /* best effort */ }
         const err = new Error('Δεν βρέθηκε πεδίο αρχείου στη σελίδα εισαγωγής XML.');
         err.teeDebug = { url: page.url(), screenshotBase64: debugScreenshot };
         throw err;
@@ -715,7 +728,7 @@ export class TeeClient {
 
       if (!submitted) {
         let debugScreenshot;
-        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch {}
+        try { debugScreenshot = (await page.screenshot()).toString('base64'); } catch { /* best effort */ }
         const err = new Error('Δεν βρέθηκε κουμπί υποβολής στη σελίδα εισαγωγής XML.');
         err.teeDebug = { url: page.url(), screenshotBase64: debugScreenshot };
         throw err;
@@ -753,7 +766,7 @@ export class TeeClient {
       }
 
       // Look for protocol/reference number
-      const refMatch = pageText.match(/(?:πρωτ[οό]κολλο|αρ\.|αριθμ)[:\s]*([A-Za-z0-9\-\/]+)/i);
+      const refMatch = pageText.match(/(?:πρωτ[οό]κολλο|αρ\.|αριθμ)[:\s]*([A-Za-z0-9\-/]+)/i);
       if (refMatch) {
         tee_submission_ref = refMatch[1];
       }
@@ -792,7 +805,7 @@ export class TeeClient {
 
 // ── Normalize TEE API responses to our schema ─────────────────────
 
-function normalizeApplicationList(data) {
+function _normalizeApplicationList(data) {
   const items = Array.isArray(data) ? data
     : (data.items || data.content || data.data || data.aitiseis || []);
   return items.map(normalizeApplication);
