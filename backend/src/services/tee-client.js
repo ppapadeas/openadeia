@@ -399,8 +399,6 @@ export class TeeClient {
         );
         err.teeDebug = {
           url: debugUrl,
-          pageTitle: debugTitle,
-          tableCount: debugTableCount,
           screenshotBase64: debugScreenshot,
           htmlSnippet: (debugHtml || '').slice(0, 8000),
           adfBootState,
