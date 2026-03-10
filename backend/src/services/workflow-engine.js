@@ -1,5 +1,5 @@
 import db from '../config/database.js';
-import { getRules, validateStageTransition } from './nok-rules.js';
+import { getRules } from './nok-rules.js';
 
 /**
  * Advance a project to the next workflow stage.
