@@ -28,6 +28,7 @@ export default function ProjectDetail() {
   const [tab, setTab] = useState('overview');
   const [showCompose, setShowCompose] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -40,6 +41,16 @@ export default function ProjectDetail() {
       qc.invalidateQueries(['project', id]);
       qc.invalidateQueries(['projects']);
       toast.success(`Μετάβαση: ${r.fromStage} → ${r.toStage}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => projectsApi.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries(['projects']);
+      toast.success('Ο φάκελος διαγράφηκε.');
+      navigate('/projects');
     },
     onError: (e) => toast.error(e.message),
   });
@@ -121,6 +132,11 @@ export default function ProjectDetail() {
               </button>
             )}
             <button className="btn-secondary" onClick={() => setShowCompose(true)}>✉ Email</button>
+            <button
+              className="btn-secondary text-red-400 hover:text-red-300 hover:border-red-400"
+              onClick={() => setShowDeleteConfirm(true)}>
+              🗑 Διαγραφή
+            </button>
           </div>
         </div>
 
@@ -188,6 +204,34 @@ export default function ProjectDetail() {
                 disabled={submitToTeeMutation.isPending}
               >
                 {submitToTeeMutation.isPending ? 'Υποβολή σε εξέλιξη…' : 'Υποβολή'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="card max-w-sm mx-4">
+            <h3 className="font-semibold text-lg mb-2">Διαγραφή φακέλου;</h3>
+            <p className="text-sm text-text-muted mb-1">
+              <span className="font-medium text-text-primary">{project.address || project.id}</span>
+            </p>
+            <p className="text-sm text-red-400 mb-5">
+              Η ενέργεια είναι μη αναστρέψιμη. Όλα τα έγγραφα και τα δεδομένα του φακέλου θα χαθούν.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                className="btn-secondary"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteMutation.isPending}>
+                Ακύρωση
+              </button>
+              <button
+                className="btn-primary bg-red-600 hover:bg-red-700"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? 'Διαγραφή…' : 'Ναι, Διαγραφή'}
               </button>
             </div>
           </div>
