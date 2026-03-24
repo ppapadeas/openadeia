@@ -389,10 +389,8 @@ export class TeeClient {
         }
 
         // Fallback: accept any row with a permit code pattern or 5+ cells
+        const looksLikePermitCode = (c) => /\d{4}\/\d+/.test(c) || /\d{6,}/.test(c);
         if (results.length === 0) {
-          function looksLikePermitCode(c) {
-            return /\d{4}\/\d+/.test(c) || /\d{6,}/.test(c);
-          }
           for (const table of document.querySelectorAll('table')) {
             for (const tr of table.querySelectorAll('tr')) {
               const cells = [...tr.querySelectorAll('td')]
