@@ -361,37 +361,54 @@ export class TeeClient {
         const results = [];
         const seen = new Set(); // deduplicate by row text
 
-        // Permit code patterns: "2024/12345", "123456", or prefixed like "ΑΡ.123456"
-        function looksLikePermitCode(c) {
-          return /\d{4}\/\d+/.test(c) || /\d{5,}/.test(c);
+        // The results table has class "x17f x182" (ADF generated).
+        // Data rows start with a numeric A/A (e.g. "2387260").
+        // Strategy: find the results table specifically, then collect data rows.
+
+        function isDataRow(cells) {
+          // A valid data row starts with a number (A/A αίτησης) and has 4+ cells
+          return cells.length >= 4 && /^\d+$/.test(cells[0]);
         }
 
-        // Collect from all tables (ADF may render main + detail tables)
+        // First pass: look for the specific results table (class x17f or contains data rows)
         for (const table of document.querySelectorAll('table')) {
-          for (const tr of table.querySelectorAll('tr')) {
+          const trs = [...table.querySelectorAll('tr')];
+          const dataRows = [];
+          for (const tr of trs) {
             const cells = [...tr.querySelectorAll('td')]
               .map(td => (td.innerText || td.textContent || '').trim())
               .filter(Boolean);
-            if (cells.length < 2) continue;
-
-            // Skip header-like rows (all short text, no numbers)
-            if (cells.every(c => c.length < 3 && !/\d/.test(c))) continue;
-
-            // Build a key to deduplicate
-            const key = cells.join('|');
-            if (seen.has(key)) continue;
-
-            // Accept row if it has a permit code OR has enough data cells (4+)
-            // to be a real data row (some permit codes may be in non-standard format)
-            if (cells.some(looksLikePermitCode) || cells.length >= 4) {
-              seen.add(key);
-              results.push(cells);
+            if (isDataRow(cells)) dataRows.push(cells);
+          }
+          if (dataRows.length > 0) {
+            for (const cells of dataRows) {
+              const key = cells.join('|');
+              if (!seen.has(key)) { seen.add(key); results.push(cells); }
             }
           }
         }
 
-        // If the ADF table uses div-based rendering (af:treeTable or panelCollection),
-        // also check for role="row" elements
+        // Fallback: accept any row with a permit code pattern or 5+ cells
+        if (results.length === 0) {
+          function looksLikePermitCode(c) {
+            return /\d{4}\/\d+/.test(c) || /\d{6,}/.test(c);
+          }
+          for (const table of document.querySelectorAll('table')) {
+            for (const tr of table.querySelectorAll('tr')) {
+              const cells = [...tr.querySelectorAll('td')]
+                .map(td => (td.innerText || td.textContent || '').trim())
+                .filter(Boolean);
+              if (cells.length < 3) continue;
+              const key = cells.join('|');
+              if (seen.has(key)) continue;
+              if (cells.some(looksLikePermitCode)) {
+                seen.add(key); results.push(cells);
+              }
+            }
+          }
+        }
+
+        // Also check role="row" elements (div-based ADF tables)
         if (results.length === 0) {
           for (const row of document.querySelectorAll('[role="row"]')) { // eslint-disable-line no-shadow
             const cells = [...row.querySelectorAll('[role="gridcell"], [role="cell"]')]
@@ -399,10 +416,8 @@ export class TeeClient {
               .filter(Boolean);
             if (cells.length < 2) continue;
             const key = cells.join('|');
-            if (seen.has(key)) continue;
-            if (cells.some(looksLikePermitCode) || cells.length >= 4) {
-              seen.add(key);
-              results.push(cells);
+            if (!seen.has(key) && (isDataRow(cells) || cells.length >= 5)) {
+              seen.add(key); results.push(cells);
             }
           }
         }
