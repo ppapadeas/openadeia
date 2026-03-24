@@ -15,6 +15,7 @@ import signRoute from './routes/sign.js';
 import clientsRoute from './routes/clients.js';
 import searchRoute from './routes/search.js';
 import teeRoute from './routes/tee.js';
+import feesRoute from './routes/fees.js';
 
 /**
  * Build and return the Fastify app without starting it.
@@ -75,6 +76,7 @@ export async function buildApp(opts = {}) {
   await app.register(clientsRoute, { prefix: '/api/clients' });
   await app.register(searchRoute, { prefix: '/api/search' });
   await app.register(teeRoute, { prefix: '/api/tee' });
+  await app.register(feesRoute, { prefix: '/api/fees' });
 
   // ── Health check ────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
