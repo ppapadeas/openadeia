@@ -277,15 +277,54 @@ export class TeeClient {
       // Phase 5: navigate to "Αναζήτηση" menu item.
       // The portal opens on "Εισαγωγή" by default (shows engineer profile, not permits).
       // We must click the "Αναζήτηση" left-nav link to reach the permits search/list view.
-      // Phase 5: click the main nav item "Εισαγωγή/Αναζήτηση/Επεξεργασία" (ADF id: pt1:np1:cni1)
-      // This loads the search/list view with all permits. The portal opens on the home page
-      // by default — clicking this nav item triggers an ADF PPR that populates the table.
+      // Phase 5: navigate to the permits search view and trigger "Οι αιτήσεις μου" search.
+      //
+      // The portal opens on the home page. Steps:
+      //   1. Click nav item pt1:np1:cni1 → loads the search form
+      //   2. Select "Οι αιτήσεις μου" in the "Επιλογή αναζήτησης" dropdown (id: pt1:r1:0:soc6::content)
+      //   3. Click the preset "Σε διαδικασία έκδοσης" (id: pt1:r1:0:cl1) to run search
+      //      OR click the search submit button
+      //
+      // After search executes the ADF table populates with the engineer's permits.
       try {
+        // Step 1: open search view
         await page.click('#pt1\\:np1\\:cni1', { timeout: 10_000 });
         await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
         await page.waitForTimeout(2_000);
+
+        // Step 2: set "Επιλογή αναζήτησης" to "Οι αιτήσεις μου"
+        const selectId = 'pt1:r1:0:soc6::content';
+        const selectEl = await page.$(`#${selectId.replace(/:/g, '\\:')}`);
+        if (selectEl) {
+          await page.selectOption(`#${selectId.replace(/:/g, '\\:')}`, { label: 'Οι αιτήσεις μου' });
+          await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+          await page.waitForTimeout(1_000);
+        }
+
+        // Step 3: click "Σε διαδικασία έκδοσης" preset to execute search with results
+        // (this covers all active permits; we collect all pages)
+        const presetEl = await page.$('#pt1\\:r1\\:0\\:cl1');
+        if (presetEl) {
+          await presetEl.click();
+          await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+          await page.waitForTimeout(3_000);
+        } else {
+          // Fallback: find and click any search submit button
+          /* eslint-disable no-undef */
+          await page.evaluate(() => {
+            const btns = [...document.querySelectorAll('button, input[type="submit"], a')];
+            const btn = btns.find(b => {
+              const t = (b.innerText || b.value || b.textContent || '').trim();
+              return t === 'Αναζήτηση' || t === 'Εύρεση' || t === 'Search';
+            });
+            if (btn) btn.click();
+          });
+          /* eslint-enable no-undef */
+          await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+          await page.waitForTimeout(3_000);
+        }
       } catch {
-        // Nav item not found or click failed — continue, table may already be visible
+        // Nav/search failed — continue, fallback table scraping may still find data
       }
 
       // Wait for the ADF rich table to appear. The component renders as a <table>
