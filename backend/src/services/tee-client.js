@@ -277,28 +277,60 @@ export class TeeClient {
       // Phase 5: navigate to "Αναζήτηση" menu item.
       // The portal opens on "Εισαγωγή" by default (shows engineer profile, not permits).
       // We must click the "Αναζήτηση" left-nav link to reach the permits search/list view.
+      // Debug: capture page state after ADF boot
+      const debugDir = process.env.TEE_DEBUG_DIR || tmpdir();
+      const debugEnabled = process.env.TEE_DEBUG === '1';
+      if (debugEnabled) {
+        await page.screenshot({ path: join(debugDir, 'tee-after-boot.png'), fullPage: true });
+        const bodyHtml = await page.evaluate(() => document.body.innerHTML.substring(0, 8000));
+        await writeFile(join(debugDir, 'tee-after-boot.html'), bodyHtml);
+      }
+
       try {
         /* eslint-disable no-undef */
-        const searchLink = await page.evaluateHandle(() => {
-          // Find nav links — try by text content in various container types
+        // Dump all visible text to find the exact nav label
+        const navTexts = await page.evaluate(() => {
           const candidates = [
-            ...document.querySelectorAll('a, span[role="link"], td.xng, .af_navigationPane_link'),
+            ...document.querySelectorAll('a, span[role="link"], td, li, .af_navigationPane_link, [class*="nav"]'),
           ];
-          return candidates.find(el => {
-            const txt = (el.innerText || el.textContent || '').trim();
-            return txt === 'Αναζήτηση' || txt === 'Αναζητηση';
-          }) || null;
+          return candidates
+            .map(el => (el.innerText || el.textContent || '').trim())
+            .filter(t => t.length > 0 && t.length < 40)
+            .slice(0, 50);
         });
         /* eslint-enable no-undef */
 
-        const el = searchLink.asElement();
-        if (el) {
-          await el.click();
+        // Find any element with "Αναζήτηση" or similar
+        const targetText = navTexts.find(t =>
+          t.includes('Αναζήτ') || t.includes('αναζήτ') || t.includes('Search')
+        );
+
+        if (targetText) {
+          /* eslint-disable no-undef */
+          await page.evaluate((txt) => {
+            const el = [...document.querySelectorAll('a, span, td, li, [class*="nav"]')]
+              .find(e => (e.innerText || e.textContent || '').trim() === txt);
+            if (el) el.click();
+          }, targetText);
+          /* eslint-enable no-undef */
           await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
           await page.waitForTimeout(2_000);
         }
+
+        if (debugEnabled) {
+          await page.screenshot({ path: join(debugDir, 'tee-after-nav.png'), fullPage: true });
+          const afterHtml = await page.evaluate(() => document.body.innerHTML.substring(0, 8000));
+          await writeFile(join(debugDir, 'tee-after-nav.html'), afterHtml);
+          const allText = await page.evaluate(() =>
+            [...document.querySelectorAll('a, span[role="link"], td, li')]
+              .map(e => (e.innerText || e.textContent || '').trim())
+              .filter(t => t.length > 0 && t.length < 60)
+              .slice(0, 80)
+          );
+          await writeFile(join(debugDir, 'tee-nav-texts.json'), JSON.stringify({ navTexts, allText, targetText }, null, 2));
+        }
       } catch {
-        // If nav click fails, continue — maybe page already shows search results
+        // If nav click fails, continue
       }
 
       // Wait for the ADF rich table to appear. The component renders as a <table>
