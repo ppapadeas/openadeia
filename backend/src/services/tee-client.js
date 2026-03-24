@@ -274,6 +274,33 @@ export class TeeClient {
       // Phase 4: wait for a second networkidle after ADF boot PPR cycle
       await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
+      // Phase 5: navigate to "Αναζήτηση" menu item.
+      // The portal opens on "Εισαγωγή" by default (shows engineer profile, not permits).
+      // We must click the "Αναζήτηση" left-nav link to reach the permits search/list view.
+      try {
+        /* eslint-disable no-undef */
+        const searchLink = await page.evaluateHandle(() => {
+          // Find nav links — try by text content in various container types
+          const candidates = [
+            ...document.querySelectorAll('a, span[role="link"], td.xng, .af_navigationPane_link'),
+          ];
+          return candidates.find(el => {
+            const txt = (el.innerText || el.textContent || '').trim();
+            return txt === 'Αναζήτηση' || txt === 'Αναζητηση';
+          }) || null;
+        });
+        /* eslint-enable no-undef */
+
+        const el = searchLink.asElement();
+        if (el) {
+          await el.click();
+          await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+          await page.waitForTimeout(2_000);
+        }
+      } catch {
+        // If nav click fails, continue — maybe page already shows search results
+      }
+
       // Wait for the ADF rich table to appear. The component renders as a <table>
       // inside a scrollable container. Try multiple selectors: ADF component ID,
       // ADF-generated table classes, or any data table with enough columns.
