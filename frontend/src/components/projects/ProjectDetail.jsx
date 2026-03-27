@@ -10,6 +10,7 @@ import Checklist from '../nok/Checklist.jsx';
 import ComposeDialog from '../email/ComposeDialog.jsx';
 import ProgressRing from '../ui/ProgressRing.jsx';
 import FeeCalculator from '../fees/FeeCalculator.jsx';
+import PortalTab from '../portal/PortalTab.jsx';
 
 const TABS = [
   { id: 'overview',   label: 'Επισκόπηση' },
@@ -18,7 +19,8 @@ const TABS = [
   { id: 'checklist',  label: 'Checklist' },
   { id: 'timeline',   label: 'Ιστορικό' },
   { id: 'email',      label: 'Email' },
-  { id: 'fees',      label: 'Αμοιβές' },
+  { id: 'fees',       label: 'Αμοιβές' },
+  { id: 'portal',     label: 'Portal' },
 ];
 
 export default function ProjectDetail() {
@@ -168,6 +170,7 @@ export default function ProjectDetail() {
       {tab === 'timeline' && <TimelineTab logs={timeline} />}
       {tab === 'email' && <EmailTab emails={emails} onCompose={() => setShowCompose(true)} />}
       {tab === 'fees' && <FeeCalculator projectId={id} />}
+      {tab === 'portal' && <PortalTab projectId={id} />}
 
       {showCompose && project.client && (
         <ComposeDialog

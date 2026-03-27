@@ -8,6 +8,7 @@ import ClientDetail from './components/clients/ClientDetail.jsx';
 import NokRulesViewer from './components/nok/RulesViewer.jsx';
 import LoginPage from './components/auth/LoginPage.jsx';
 import ProfilePage from './components/auth/ProfilePage.jsx';
+import ClientPortal from './pages/ClientPortal.jsx';
 
 // Redirect to /login if not authenticated
 function RequireAuth({ children }) {
@@ -20,7 +21,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public routes — no auth required */}
+        <Route path="/portal/:token" element={<ClientPortal />} />
         <Route path="/login" element={<LoginPage />} />
+
+        {/* Authenticated shell */}
         <Route path="/" element={
           <RequireAuth><Shell /></RequireAuth>
         }>
