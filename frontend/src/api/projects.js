@@ -66,6 +66,11 @@ export const portalApi = {
   uploadFile: (token, stepId, formData) => api.post(`/api/portal/p/${token}/steps/${stepId}/upload`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
+  signStep: (token, stepId, data) => api.post(`/api/portal/p/${token}/steps/${stepId}/sign`, data),
+  getStepDocs: (token, stepId) => api.get(`/api/portal/p/${token}/steps/${stepId}/docs`),
+  downloadDoc: (token, docId) => `/api/portal/p/${token}/docs/${docId}/download`,
+  // Admin: generate PDF for a sign step
+  generatePdf: (stepId, docType) => api.post(`/api/portal/steps/${stepId}/generate-pdf`, { doc_type: docType }),
 };
 
 export const teeApi = {

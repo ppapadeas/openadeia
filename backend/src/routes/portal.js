@@ -1,6 +1,18 @@
 import { randomUUID } from 'crypto';
 import db from '../config/database.js';
 import minioClient from '../config/minio.js';
+import {
+  generateAssignmentPdf,
+  generateFeeAgreementPdf,
+  embedSignatureInDoc,
+  getDocDownloadUrl,
+  ensurePortalDocsBucket,
+} from '../services/portal-document.js';
+import {
+  sendWelcomeEmail,
+  notifyEngineerStepSubmitted,
+  notifyClientStepReviewed,
+} from '../services/portal-email.js';
 
 const PORTAL_BUCKET = process.env.MINIO_PORTAL_BUCKET || 'portal';
 
@@ -16,7 +28,7 @@ async function ensurePortalBucket() {
 }
 
 /**
- * Get full portal data (project + steps + form_data + files)
+ * Get full portal data (project + steps + form_data + files + generated_docs)
  * for a given portal_project row.
  */
 async function loadPortalData(portalProject) {
@@ -28,6 +40,7 @@ async function loadPortalData(portalProject) {
 
   let formDataMap = {};
   let filesMap = {};
+  let docsMap = {};
 
   if (stepIds.length > 0) {
     const formRows = await db('portal_form_data').whereIn('step_id', stepIds);
@@ -43,6 +56,14 @@ async function loadPortalData(portalProject) {
       if (!filesMap[row.step_id]) filesMap[row.step_id] = [];
       filesMap[row.step_id].push(row);
     }
+
+    const docRows = await db('portal_generated_docs')
+      .whereIn('step_id', stepIds)
+      .select('id', 'step_id', 'minio_path', 'signed_at', 'created_at');
+    for (const row of docRows) {
+      if (!docsMap[row.step_id]) docsMap[row.step_id] = [];
+      docsMap[row.step_id].push(row);
+    }
   }
 
   return {
@@ -51,8 +72,17 @@ async function loadPortalData(portalProject) {
       ...s,
       form_data: formDataMap[s.id] || {},
       files: filesMap[s.id] || [],
+      generated_docs: docsMap[s.id] || [],
     })),
   };
+}
+
+/**
+ * Get portal base URL from settings or env.
+ */
+async function getBaseUrl() {
+  const setting = await db('portal_settings').where({ key: 'base_url' }).first();
+  return setting?.value || process.env.PORTAL_BASE_URL || 'http://localhost:3000';
 }
 
 export default async function portalRoutes(fastify) {
@@ -82,14 +112,10 @@ export default async function portalRoutes(fastify) {
       client_message: client_message || '',
     }).returning('*');
 
-    const baseUrl = (await db('portal_settings').where({ key: 'base_url' }).first())?.value
-      || process.env.PORTAL_BASE_URL
-      || 'http://localhost:3000';
+    const baseUrl = await getBaseUrl();
+    const portalUrl = `${baseUrl}/portal/${token}`;
 
-    reply.code(201).send({
-      ...portal,
-      portal_url: `${baseUrl}/portal/${token}`,
-    });
+    reply.code(201).send({ ...portal, portal_url: portalUrl });
   });
 
   // ── Admin: GET /:projectId — get portal by project ─────────────────
@@ -103,10 +129,7 @@ export default async function portalRoutes(fastify) {
     if (!portal) return reply.code(404).send({ error: 'Portal not found' });
 
     const data = await loadPortalData(portal);
-
-    const baseUrl = (await db('portal_settings').where({ key: 'base_url' }).first())?.value
-      || process.env.PORTAL_BASE_URL
-      || 'http://localhost:3000';
+    const baseUrl = await getBaseUrl();
 
     reply.send({ ...data, portal_url: `${baseUrl}/portal/${portal.token}` });
   });
@@ -128,6 +151,22 @@ export default async function portalRoutes(fastify) {
       .returning('*');
 
     if (!portal) return reply.code(404).send({ error: 'Portal not found' });
+
+    // Send welcome email when portal is activated
+    if (updates.status === 'active') {
+      try {
+        const project = await db('projects').where({ id: portal.project_id }).first();
+        const baseUrl = await getBaseUrl();
+        const portalUrl = `${baseUrl}/portal/${portal.token}`;
+        // Fire and forget
+        sendWelcomeEmail(portal, project, portalUrl).catch((e) =>
+          console.error('[portal] welcome email error:', e.message)
+        );
+      } catch (e) {
+        console.error('[portal] welcome email setup error:', e.message);
+      }
+    }
+
     reply.send(portal);
   });
 
@@ -210,7 +249,41 @@ export default async function portalRoutes(fastify) {
       details: comment || null,
     });
 
+    // Notify client
+    try {
+      const portal = await db('portal_projects').where({ id: step.portal_project_id }).first();
+      const project = portal ? await db('projects').where({ id: portal.project_id }).first() : null;
+      notifyClientStepReviewed(portal, project, updated, action, comment).catch((e) =>
+        console.error('[portal] client notify error:', e.message)
+      );
+    } catch (e) {
+      console.error('[portal] client notify setup error:', e.message);
+    }
+
     reply.send(updated);
+  });
+
+  // ── Admin: POST /steps/:stepId/generate-pdf — generate PDF for a sign step ─
+  fastify.post('/steps/:stepId/generate-pdf', {
+    preHandler: fastify.authenticate,
+  }, async (req, reply) => {
+    const step = await db('portal_steps').where({ id: req.params.stepId }).first();
+    if (!step) return reply.code(404).send({ error: 'Step not found' });
+
+    const config = typeof step.config === 'string' ? JSON.parse(step.config) : (step.config || {});
+    const docType = req.body?.doc_type || config.doc_type || 'assignment';
+
+    try {
+      let doc;
+      if (docType === 'fee_agreement') {
+        doc = await generateFeeAgreementPdf(step.id, step.portal_project_id, config);
+      } else {
+        doc = await generateAssignmentPdf(step.id, step.portal_project_id);
+      }
+      reply.send(doc);
+    } catch (err) {
+      reply.code(500).send({ error: err.message });
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -283,6 +356,16 @@ export default async function portalRoutes(fastify) {
       actor: 'client',
     });
 
+    // Notify engineer
+    try {
+      const project = await db('projects').where({ id: portal.project_id }).first();
+      notifyEngineerStepSubmitted(portal, project, updated).catch((e) =>
+        console.error('[portal] engineer notify error:', e.message)
+      );
+    } catch (e) {
+      console.error('[portal] engineer notify setup error:', e.message);
+    }
+
     reply.send(updated);
   });
 
@@ -337,13 +420,14 @@ export default async function portalRoutes(fastify) {
 
     // Update step status
     const newStatus = step.review_required ? 'submitted' : 'done';
-    await db('portal_steps')
+    const [updated] = await db('portal_steps')
       .where({ id: step.id })
       .update({
         status: newStatus,
         submitted_at: db.fn.now(),
         completed_at: newStatus === 'done' ? db.fn.now() : null,
-      });
+      })
+      .returning('*');
 
     // Log
     await db('portal_activity_log').insert({
@@ -354,6 +438,133 @@ export default async function portalRoutes(fastify) {
       details: uploaded.map((f) => f.original_name).join(', '),
     });
 
+    // Notify engineer
+    try {
+      const project = await db('projects').where({ id: portal.project_id }).first();
+      notifyEngineerStepSubmitted(portal, project, updated).catch((e) =>
+        console.error('[portal] engineer notify error:', e.message)
+      );
+    } catch (e) {
+      console.error('[portal] engineer notify setup error:', e.message);
+    }
+
     reply.code(201).send({ uploaded });
+  });
+
+  // ── PUBLIC: POST /p/:token/steps/:stepId/sign — digital signature ──
+  fastify.post('/p/:token/steps/:stepId/sign', async (req, reply) => {
+    const portal = await db('portal_projects').where({ token: req.params.token }).first();
+    if (!portal) return reply.code(404).send({ error: 'Portal not found' });
+
+    const step = await db('portal_steps')
+      .where({ id: req.params.stepId, portal_project_id: portal.id })
+      .first();
+    if (!step) return reply.code(404).send({ error: 'Step not found' });
+
+    const { signature } = req.body || {};
+    if (!signature) return reply.code(400).send({ error: 'signature (base64 PNG) required' });
+
+    // Find or generate the document to sign
+    let doc = await db('portal_generated_docs')
+      .where({ step_id: step.id })
+      .orderBy('created_at', 'desc')
+      .first();
+
+    if (!doc) {
+      // Auto-generate the PDF if not yet created
+      const config = typeof step.config === 'string' ? JSON.parse(step.config) : (step.config || {});
+      const docType = config.doc_type || 'assignment';
+      try {
+        if (docType === 'fee_agreement') {
+          doc = await generateFeeAgreementPdf(step.id, step.portal_project_id, config);
+        } else {
+          doc = await generateAssignmentPdf(step.id, step.portal_project_id);
+        }
+      } catch (err) {
+        return reply.code(500).send({ error: `PDF generation failed: ${err.message}` });
+      }
+    }
+
+    // Embed signature into the PDF
+    let signedDoc;
+    try {
+      signedDoc = await embedSignatureInDoc(doc.id, signature);
+    } catch (err) {
+      return reply.code(500).send({ error: `Signature embedding failed: ${err.message}` });
+    }
+
+    // Update step status
+    const newStatus = step.review_required ? 'submitted' : 'done';
+    const [updated] = await db('portal_steps')
+      .where({ id: step.id })
+      .update({
+        status: newStatus,
+        submitted_at: db.fn.now(),
+        completed_at: newStatus === 'done' ? db.fn.now() : null,
+      })
+      .returning('*');
+
+    // Log
+    await db('portal_activity_log').insert({
+      portal_project_id: portal.id,
+      step_id: step.id,
+      action: 'step_signed',
+      actor: 'client',
+    });
+
+    // Notify engineer
+    try {
+      const project = await db('projects').where({ id: portal.project_id }).first();
+      notifyEngineerStepSubmitted(portal, project, updated).catch((e) =>
+        console.error('[portal] engineer notify error:', e.message)
+      );
+    } catch (e) {
+      console.error('[portal] engineer notify setup error:', e.message);
+    }
+
+    reply.send({ step: updated, doc: signedDoc });
+  });
+
+  // ── PUBLIC: GET /p/:token/docs/:docId/download — download a PDF ────
+  fastify.get('/p/:token/docs/:docId/download', async (req, reply) => {
+    const portal = await db('portal_projects').where({ token: req.params.token }).first();
+    if (!portal) return reply.code(404).send({ error: 'Portal not found' });
+
+    const doc = await db('portal_generated_docs')
+      .where({ id: req.params.docId })
+      .first();
+
+    if (!doc) return reply.code(404).send({ error: 'Document not found' });
+
+    // Verify this doc belongs to this portal
+    const step = await db('portal_steps')
+      .where({ id: doc.step_id, portal_project_id: portal.id })
+      .first();
+    if (!step) return reply.code(403).send({ error: 'Access denied' });
+
+    try {
+      const url = await getDocDownloadUrl(doc.minio_path);
+      reply.redirect(url);
+    } catch (err) {
+      reply.code(500).send({ error: 'Could not generate download URL' });
+    }
+  });
+
+  // ── PUBLIC: GET /p/:token/steps/:stepId/docs — list docs for a step ─
+  fastify.get('/p/:token/steps/:stepId/docs', async (req, reply) => {
+    const portal = await db('portal_projects').where({ token: req.params.token }).first();
+    if (!portal) return reply.code(404).send({ error: 'Portal not found' });
+
+    const step = await db('portal_steps')
+      .where({ id: req.params.stepId, portal_project_id: portal.id })
+      .first();
+    if (!step) return reply.code(404).send({ error: 'Step not found' });
+
+    const docs = await db('portal_generated_docs')
+      .where({ step_id: step.id })
+      .orderBy('created_at', 'desc')
+      .select('id', 'step_id', 'minio_path', 'signed_at', 'created_at');
+
+    reply.send(docs);
   });
 }

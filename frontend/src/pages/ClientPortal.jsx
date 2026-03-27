@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -186,7 +186,18 @@ export default function ClientPortal() {
                       />
                     )}
 
-                    {(step.type === 'sign' || step.type === 'pay') && canInteract && (
+                    {step.type === 'sign' && canInteract && (
+                      <SignStep
+                        step={step}
+                        token={token}
+                        onSuccess={() => {
+                          qc.invalidateQueries(['public-portal', token]);
+                          setActiveStep(null);
+                        }}
+                      />
+                    )}
+
+                    {step.type === 'pay' && canInteract && (
                       <div className="text-text-muted text-sm text-center py-4">
                         Αυτό το βήμα θα είναι διαθέσιμο σύντομα.<br />
                         Επικοινωνήστε με τον μηχανικό σας για οδηγίες.
@@ -369,6 +380,152 @@ function UploadStep({ step, token, onSuccess }) {
           {mutation.isPending ? 'Ανέβασμα…' : `Ανέβασμα: ${file.name}`}
         </button>
       )}
+    </div>
+  );
+}
+
+// ── Sign Step Component ──────────────────────────────────────────────────────
+
+function SignStep({ step, token, onSuccess }) {
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+  const [phase, setPhase] = useState('sign'); // 'sign' | 'done'
+  const [lastPos, setLastPos] = useState(null);
+
+  // Set up canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }, []);
+
+  const getPos = (e, canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if (e.touches) {
+      return {
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY,
+      };
+    }
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const pos = getPos(e, canvas);
+    setIsDrawing(true);
+    setLastPos(pos);
+  };
+
+  const draw = (e) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const pos = getPos(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(lastPos.x, lastPos.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    setLastPos(pos);
+    setHasSignature(true);
+  };
+
+  const stopDraw = (e) => {
+    e?.preventDefault();
+    setIsDrawing(false);
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+  };
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const canvas = canvasRef.current;
+      const signatureB64 = canvas.toDataURL('image/png');
+      return portalApi.signStep(token, step.id, { signature: signatureB64 });
+    },
+    onSuccess: () => {
+      setPhase('done');
+      toast.success('Η υπογραφή αποθηκεύτηκε!');
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (phase === 'done') {
+    return (
+      <div className="text-center py-4">
+        <div className="text-3xl mb-2">✅</div>
+        <div className="text-green-400 font-medium mb-3">Η υπογραφή σας ολοκληρώθηκε!</div>
+        <button className="btn-primary" onClick={onSuccess}>
+          Συνέχεια →
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="text-sm text-text-muted mb-2">
+        Υπογράψτε στο παρακάτω πλαίσιο χρησιμοποιώντας το ποντίκι ή το δάχτυλό σας.
+      </div>
+
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          width={480}
+          height={160}
+          className="w-full rounded-lg border-2 border-white/20 bg-white cursor-crosshair touch-none"
+          style={{ maxHeight: '160px' }}
+          onMouseDown={startDraw}
+          onMouseMove={draw}
+          onMouseUp={stopDraw}
+          onMouseLeave={stopDraw}
+          onTouchStart={startDraw}
+          onTouchMove={draw}
+          onTouchEnd={stopDraw}
+        />
+        {!hasSignature && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="text-gray-400 text-sm select-none">Υπογράψτε εδώ…</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          className="btn-secondary text-sm flex-1"
+          onClick={clearCanvas}
+          disabled={mutation.isPending}
+        >
+          🗑 Εκκαθάριση
+        </button>
+        <button
+          className="btn-primary text-sm flex-1"
+          onClick={() => mutation.mutate()}
+          disabled={!hasSignature || mutation.isPending}
+        >
+          {mutation.isPending ? 'Αποθήκευση…' : '✓ Υποβολή Υπογραφής'}
+        </button>
+      </div>
     </div>
   );
 }
