@@ -4,6 +4,7 @@ import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 
+import errorMonitor from './plugins/error-monitor.js';
 import authRoute from './routes/auth.js';
 import projectsRoute from './routes/projects.js';
 import documentsRoute from './routes/documents.js';
@@ -38,6 +39,8 @@ export async function buildApp(opts = {}) {
   });
 
   // ── Plugins ─────────────────────────────────────────────────────────
+  await app.register(errorMonitor);
+
   await app.register(cors, {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,

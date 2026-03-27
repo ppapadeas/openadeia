@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import * as Sentry from '@sentry/node';
 import { buildApp } from './app.js';
+import db from './config/database.js';
 
 // Init Sentry before anything else so it captures all errors.
 // No-op when SENTRY_DSN is not configured.
@@ -12,6 +13,10 @@ if (process.env.SENTRY_DSN) {
     tracesSampleRate: 0.1,
   });
 }
+
+// Run pending migrations on startup
+await db.migrate.latest();
+console.log('Migrations up to date');
 
 const app = await buildApp();
 

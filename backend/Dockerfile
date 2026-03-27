@@ -10,6 +10,5 @@ RUN npx playwright install --with-deps chromium
 
 FROM base AS final
 COPY . .
-RUN npm run migrate 2>/dev/null || true
 EXPOSE 4000
-CMD ["node", "src/index.js"]
+CMD ["sh", "-c", "npx knex migrate:latest && node src/index.js"]
