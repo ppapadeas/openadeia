@@ -39,7 +39,7 @@ export const createProjectSchema = z.object({
   aitisi_descr: z.string().max(1024).optional(),
   entos_sxediou: z.number().int().optional(),
   natural_disaster_flag: z.number().int().min(0).max(1).optional(),
-  deadline: z.string().optional(),
+  deadline: z.string().optional().transform(v => v === '' ? undefined : v),
   notes: z.string().optional(),
 });
 
