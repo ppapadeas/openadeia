@@ -44,6 +44,15 @@ meilidata/
 *.accdb
 *.mdb
 
+# Deployment secrets (SSH keys, prod env)
+.deploy/
+
+# Claude Code
+.claude/
+
+# TEE discovery reports (large generated JSON)
+backend/tee-discovery-report-*.json
+
 # Temp
 *.tmp
 *.bak
