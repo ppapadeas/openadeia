@@ -28,9 +28,9 @@
 
 | ID | Task | Est. | Status | Owner | Files |
 |----|------|------|--------|-------|-------|
-| C01 | Feature flag system (useFeature hook + FeatureRoute guard) | 4h | TODO | - | `frontend/src/hooks/useFeature.js`, `frontend/src/components/FeatureRoute.jsx`, `frontend/src/api/index.js` |
-| C02 | Admin /api/admin/tenants query real DB (not hardcoded) | 2h | TODO | - | `backend/src/routes/admin.js` |
-| C03 | Frontend lazy loading (React.lazy for routes) | 2h | TODO | - | `frontend/src/App.jsx` |
+| C01 | Feature flag system (useFeature hook + FeatureRoute guard) | 4h | DONE | Sprint 1 | `frontend/src/hooks/useFeature.js`, `frontend/src/components/FeatureRoute.jsx`, `frontend/src/api/index.js` |
+| C02 | Admin /api/admin/tenants query real DB (not hardcoded) | 2h | DONE | Sprint 1 | `backend/src/routes/admin.js` |
+| C03 | Frontend lazy loading (React.lazy for routes) | 2h | DONE | Sprint 1 | `frontend/src/App.jsx` |
 
 ### 🟡 HIGH
 
