@@ -151,7 +151,10 @@ export default function FeeCalculator({ projectId }) {
     ...prev, ...Object.fromEntries(list.map(e => [e.id, false]))
   }));
 
-  const visibleAreas = showAllAreas ? AREAS : AREAS.filter(a => areas[a.id]);
+  // Always show A1 (κύρια χρήση) + any area that has a value entered
+  const visibleAreas = showAllAreas
+    ? AREAS
+    : AREAS.filter(a => a.id === 'A1' || areas[a.id]);
   const hasResult = !!result;
 
   return (
