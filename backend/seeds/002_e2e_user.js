@@ -27,6 +27,5 @@ export async function seed(knex) {
     password_hash,
     tenant_id: tenant.id,
     is_superadmin: true,
-    email_verified: true,
   }).onConflict('email').merge();
 }
