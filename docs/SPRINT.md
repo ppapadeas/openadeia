@@ -1,8 +1,8 @@
 # OpenAdeia — Current Sprint
 
-**Sprint:** 2026-03-29 (Sprint 2)  
-**Goal:** Email templates + Billing tests + Frontend refactor  
-**Status:** ✅ COMPLETE — Deployed 2026-03-29 20:30
+**Sprint:** 2026-03-29 (Sprint 3)  
+**Goal:** API split + Demo seeder + UsageBar polish  
+**Status:** ✅ COMPLETE — Deployed 2026-03-29 21:48
 
 ---
 
@@ -10,71 +10,68 @@
 
 | ID | Task | Builder | Status | Commit |
 |----|------|---------|--------|--------|
-| H01 | Email templates (welcome, reset, verify) | `openadeia-email-templates` | ✅ DONE | `8ce2ec8` |
-| H03 | Integration tests for billing routes | `openadeia-billing-tests` | ✅ DONE | `8dfad0c` |
-| M01 | Split ProjectDetail.jsx into tab components | `openadeia-refactor-tabs` | ✅ DONE | `742d8d5` |
+| M02 | Split api/projects.js into domain files | `openadeia-api-split` | ✅ DONE | `e7bcdd0` |
+| M03 | Demo data seeder with realistic Greek data | `openadeia-demo-seeder` | ✅ DONE | `f23c577` |
+| M04 | UsageBar collapsed mode polish | `openadeia-usagebar-polish` | ✅ DONE | `7bd3e10` |
 
 ---
 
 ## Task Details
 
-### H01: Email Templates
+### M02: API Split
 
 **Scope:**
-- Create HTML email templates for: welcome, password reset, email verification
-- Greek text, responsive design, OpenAdeia branding
-- Create email template service to render templates with variables
+- Split monolithic `frontend/src/api/projects.js` into domain-specific files
+- Each domain gets its own file with related API calls
 
 **Files:**
-- `backend/src/templates/welcome.html` (new)
-- `backend/src/templates/reset-password.html` (new)
-- `backend/src/templates/verify-email.html` (new)
-- `backend/src/services/email-templates.js` (new)
+- `frontend/src/api/projects.js` (keep project-related only)
+- `frontend/src/api/clients.js` (new)
+- `frontend/src/api/auth.js` (new)
+- `frontend/src/api/nok.js` (new)
+- `frontend/src/api/portal.js` (new)
+- `frontend/src/api/tee.js` (new)
+- `frontend/src/api/index.js` (re-export all)
 
 **Acceptance:**
-- [ ] Templates render with dynamic variables (name, link, etc.)
-- [ ] Responsive design (mobile-friendly)
-- [ ] Greek text throughout
-- [ ] Service exports render functions for each template
+- [ ] Each domain in separate file
+- [ ] Clean re-exports from index.js
+- [ ] Build succeeds
+- [ ] No runtime errors
 
 ---
 
-### H03: Billing Integration Tests
+### M03: Demo Seeder
 
 **Scope:**
-- Add comprehensive tests for billing routes
-- Test Stripe webhook handling
-- Mock Stripe API calls
+- Improve demo data seeder with realistic Greek data
+- More diverse sample projects, clients, documents
 
 **Files:**
-- `backend/test/routes/billing.test.js` (enhance existing)
+- `backend/src/services/demo-seeder.js` (enhance)
 
 **Acceptance:**
-- [ ] Test checkout session creation
-- [ ] Test portal session creation
-- [ ] Test webhook event handling (checkout.completed, subscription.updated, etc.)
-- [ ] All tests pass
+- [ ] 3-5 sample clients with Greek names
+- [ ] 2-3 sample projects with different types/stages
+- [ ] Sample workflow logs
+- [ ] Tests pass
 
 ---
 
-### M01: Split ProjectDetail.jsx
+### M04: UsageBar Polish
 
 **Scope:**
-- Extract tab components from monolithic ProjectDetail
-- Create separate files for each tab
-- Improve maintainability
+- Improve collapsed mode styling
+- Add tooltips
+- Better mobile responsiveness
 
 **Files:**
-- `frontend/src/pages/ProjectDetail.jsx` (simplify)
-- `frontend/src/components/projects/tabs/OverviewTab.jsx` (new)
-- `frontend/src/components/projects/tabs/TimelineTab.jsx` (new)
-- `frontend/src/components/projects/tabs/DocumentsTab.jsx` (new)
-- `frontend/src/components/projects/tabs/EmailTab.jsx` (new)
+- `frontend/src/components/usage/UsageBar.jsx` (enhance)
 
 **Acceptance:**
-- [ ] Each tab is a separate component
-- [ ] ProjectDetail orchestrates tabs only
-- [ ] No functionality changes
+- [ ] Collapsed mode shows icon + progress ring
+- [ ] Hover shows tooltip with details
+- [ ] Mobile-friendly
 - [ ] Build succeeds
 
 ---

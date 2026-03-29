@@ -46,9 +46,9 @@
 | ID | Task | Est. | Status | Owner | Files |
 |----|------|------|--------|-------|-------|
 | M01 | Split ProjectDetail.jsx into tab components | 3h | DONE | Sprint 2 | `frontend/src/pages/ProjectDetail.jsx`, `frontend/src/components/projects/tabs/*` |
-| M02 | Split api/projects.js into domain files | 2h | TODO | - | `frontend/src/api/*.js` |
-| M03 | Demo data seeder with realistic Greek data | 2h | TODO | - | `backend/src/services/demo-seeder.js` |
-| M04 | UsageBar collapsed mode polish | 1h | TODO | - | `frontend/src/components/usage/UsageBar.jsx` |
+| M02 | Split api/projects.js into domain files | 2h | DONE | Sprint 3 | `frontend/src/api/*.js` |
+| M03 | Demo data seeder with realistic Greek data | 2h | DONE | Sprint 3 | `backend/src/services/demo-seeder.js` |
+| M04 | UsageBar collapsed mode polish | 1h | DONE | Sprint 3 | `frontend/src/components/usage/UsageBar.jsx` |
 
 ### ⚪ LOW
 
