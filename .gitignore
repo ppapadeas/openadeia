@@ -56,3 +56,4 @@ backend/tee-discovery-report-*.json
 # Temp
 *.tmp
 *.bak
+CLAUDE.md
