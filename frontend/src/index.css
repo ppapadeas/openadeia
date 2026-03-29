@@ -2,17 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Color tokens ───────────────────────────────────────────────────── */
+
+:root {
+  --bg-base: #F9FAFB;
+  --bg-surface: #F3F4F6;
+  --bg-card: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.1);
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --text-muted: #9CA3AF;
+}
+
+.dark {
+  --bg-base: #0B0E14;
+  --bg-surface: #10141C;
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --text-primary: #E2E4E9;
+  --text-secondary: #9CA3AF;
+  --text-muted: #6B7280;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
   }
   body {
-    background: #0B0E14;
-    color: #E2E4E9;
+    background: var(--bg-base);
+    color: var(--text-primary);
     font-family: 'DM Sans', sans-serif;
     margin: 0;
     padding: 0;
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   ::-webkit-scrollbar {
@@ -23,11 +50,12 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--border-default);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: var(--border-default);
+    opacity: 0.7;
   }
 
   /* Focus ring base */
@@ -53,27 +81,27 @@
     transform: translateY(0);
   }
   .btn-secondary {
-    @apply bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 text-text-primary font-medium px-4 py-2 rounded-lg transition-all text-sm;
+    @apply bg-white/5 hover:bg-white/10 active:bg-white/15 border border-border-default text-text-primary font-medium px-4 py-2 rounded-lg transition-all text-sm;
     @apply focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base focus-visible:outline-none;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .card {
-    @apply bg-white/[0.03] border border-white/[0.06] rounded-xl p-5 transition-all;
+    @apply bg-bg-card border border-border-subtle rounded-xl p-5 transition-all;
   }
   .card-hover {
-    @apply hover:bg-white/[0.05] hover:border-white/[0.1] cursor-pointer;
-    @apply focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:outline-none;
+    @apply hover:bg-bg-hover hover:border-border-default cursor-pointer;
+    @apply focus-visible:ring-2 focus-visible:ring-border-default focus-visible:outline-none;
   }
   .card-hover:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 16px rgba(0,0,0,0.2);
   }
   .input {
-    @apply w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2.5 text-text-primary text-sm placeholder-text-muted focus:outline-none focus:border-white/30 focus:bg-white/[0.06] transition-all;
-    @apply focus:ring-1 focus:ring-white/10;
+    @apply w-full bg-bg-card border border-border-default rounded-lg px-3 py-2.5 text-text-primary text-sm placeholder-text-muted focus:outline-none focus:border-border-default focus:bg-bg-hover transition-all;
+    @apply focus:ring-1 focus:ring-border-default;
   }
   .input:hover:not(:focus):not(:disabled) {
-    @apply border-white/15;
+    border-color: var(--border-default);
   }
   .input-error {
     @apply border-red-500/60 focus:border-red-400 focus:ring-red-500/20;
@@ -95,10 +123,10 @@
 
   /* Skeleton */
   .skeleton {
-    @apply bg-white/5 rounded-lg animate-pulse;
+    @apply bg-bg-hover rounded-lg animate-pulse;
   }
   .skeleton-dark {
-    @apply bg-white/[0.03] rounded-lg animate-pulse;
+    @apply bg-bg-card rounded-lg animate-pulse;
   }
 }
 

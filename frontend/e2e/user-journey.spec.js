@@ -516,9 +516,9 @@ test.describe('Authentication - Extended', () => {
   });
 });
 
-// ─── Client Portal ────────────────────────────────────────────────────────────
+// ─── Client Portal (Extended) ────────────────────────────────────────────────
 
-test.describe('Client Portal', () => {
+test.describe('Client Portal - Extended', () => {
   test('invalid token shows "Portal not found" error page', async ({ page }) => {
     await page.goto('/portal/this-is-not-a-real-token-xyz-99999');
 
@@ -794,9 +794,9 @@ test.describe('Project Delete', () => {
   });
 });
 
-// ─── Admin Dashboard ───────────────────────────────────────────────────────────
+// ─── Admin Dashboard (Extended) ───────────────────────────────────────────────
 
-test.describe('Admin Dashboard', () => {
+test.describe('Admin Dashboard - Extended', () => {
   test('non-admin user is redirected away from /admin', async ({ page }) => {
     // Log in as regular test user (no is_superadmin)
     await login(page);
