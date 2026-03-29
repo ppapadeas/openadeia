@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { searchApi } from '../../api/projects.js';
 import useAppStore from '../../store/useAppStore.js';
+import ThemeToggle from './ThemeToggle.jsx';
 
 export default function Header() {
   const [q, setQ] = useState('');
@@ -61,6 +62,7 @@ export default function Header() {
         {user?.amh && (
           <span className="text-xs text-text-muted font-mono">ΑΜΗ {user.amh}</span>
         )}
+        <ThemeToggle />
         <button
           onClick={() => navigate('/profile')}
           className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center text-accent-blue font-bold text-sm hover:bg-accent-blue/30 transition-colors"

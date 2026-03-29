@@ -1,6 +1,7 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAppStore from './store/useAppStore.js';
+import { useThemeStore } from './store/useThemeStore.js';
 import Shell from './components/layout/Shell.jsx';
 import PageLoader from './components/common/PageLoader.jsx';
 
@@ -34,9 +35,37 @@ function RequireSuperadmin({ children }) {
   return children;
 }
 
+function ThemeProvider() {
+  const { theme, getEffectiveTheme } = useThemeStore();
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    const applyTheme = () => {
+      const effective = getEffectiveTheme();
+      if (effective === 'dark') {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
+    };
+
+    applyTheme();
+
+    // Listen for system preference changes (only relevant when theme === 'system')
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => applyTheme();
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [theme, getEffectiveTheme]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <ThemeProvider />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           {/* Public routes — no auth required */}
