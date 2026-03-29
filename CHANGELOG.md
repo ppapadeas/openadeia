@@ -2,7 +2,55 @@
 
 All notable changes to OpenAdeia are documented here.
 
-## [Unreleased]
+## [2.0.0] - 2026-03-29
+
+### 🚀 Major Release: SaaS Transformation
+
+This release transforms OpenAdeia from a single-tenant tool into a full multi-tenant SaaS platform while maintaining self-hosted deployment compatibility.
+
+### Added
+
+**Multi-Tenancy & Billing**
+- Multi-tenant architecture with tenant isolation on all queries
+- Stripe billing integration (checkout, portal, webhooks)
+- Usage metering and plan limits (projects, storage)
+- Subdomain-based tenant routing (tenant.openadeia.gr)
+- GDPR-compliant audit logging and data export
+
+**Authentication & Admin**
+- Organization signup flow with 14-day trial
+- Password reset and email verification
+- Superadmin panel with tenant management
+- Feature flag system for tiered access
+
+**Frontend Improvements**
+- Dark/light theme toggle with system preference detection
+- PWA support (installable app, offline caching)
+- React lazy loading for route code-splitting
+- Polished UsageBar with progress ring
+- ProjectDetail refactored into tab components
+- API split into domain-specific files
+
+**Developer Experience**
+- Email templates (welcome, reset, verify) in Greek
+- Enhanced demo seeder with realistic Greek data
+- Comprehensive billing webhook tests (210 total tests)
+- E2E Playwright tests in CI pipeline
+- Development backlog and sprint tracking
+
+### Changed
+- Frontend bundle now splits into 15+ chunks (was 1)
+- Admin `/api/admin/tenants` queries real DB with counts
+- Sidebar conditionally shows features based on plan
+
+### Fixed
+- Fee calculator formula corrected per ΠΔ 696/74
+- Tenant scoping on usage and audit endpoints
+- E2E test stability improvements
+
+---
+
+## [1.2.2] - 2026-03-27
 
 ## 2026-03-07 — Fee Calculator Rewrite
 - **fix:** Fee calculator rewritten per ΠΔ 696/74 formula (β = κ + μ/∛(Σ/1000λ))

@@ -1,6 +1,6 @@
 {
   "name": "openadeia-frontend",
-  "version": "1.2.2",
+  "version": "2.0.0",
   "description": "OpenAdeia frontend — React 18 + Vite + Tailwind",
   "type": "module",
   "scripts": {
