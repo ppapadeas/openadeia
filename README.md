@@ -40,17 +40,16 @@ OpenAdeia automates the entire permit lifecycle: from project intake and documen
 
 ## Preview
 
-<!-- TODO: Replace with actual screenshots once the app is running -->
-<!-- Recommended: capture dashboard, fee calculator, and workflow views -->
-
-<!--
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.png">
-  <img alt="OpenAdeia Dashboard" src="docs/screenshots/dashboard-light.png" width="800">
+  <img alt="OpenAdeia — Πίνακας Ελέγχου" src="docs/screenshots/dashboard-light.png" width="900">
 </picture>
--->
 
-> Screenshots coming soon — see the [live site](https://openadeia.org) for the current UI.
+<p align="center">
+  <img alt="OpenAdeia — Λεπτομέρειες Φακέλου" src="docs/screenshots/project-detail.png" width="440">
+  &nbsp;
+  <img alt="OpenAdeia — Αμοιβολόγιο (ΠΔ 696/74)" src="docs/screenshots/project-fees.png" width="440">
+</p>
 
 ---
 
