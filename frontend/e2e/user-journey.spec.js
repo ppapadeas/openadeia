@@ -939,3 +939,43 @@ test.describe('Admin Dashboard - Extended', () => {
     await expect(statValues.first()).toBeVisible({ timeout: 5_000 });
   });
 });
+
+// ─── Sidebar Routes — smoke tests ────────────────────────────────────────────
+
+test.describe('Sidebar Routes', () => {
+  test('/fees standalone page renders fee calculator', async ({ page }) => {
+    await login(page);
+    await page.goto('/fees');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page).toHaveURL(/\/fees/);
+    // Page title
+    await expect(page.locator('text=Αμοιβολόγιο')).toBeVisible({ timeout: 5_000 });
+    // FeeCalculator renders with λ info and A1 input
+    await expect(page.locator('text=λ =')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('input[type="number"]').first()).toBeVisible();
+  });
+
+  test('/tee standalone page renders TEE sync panel', async ({ page }) => {
+    await login(page);
+    await page.goto('/tee');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page).toHaveURL(/\/tee/);
+    // TEE page header
+    await expect(page.locator('text=ΤΕΕ')).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('/portal redirects to /projects', async ({ page }) => {
+    await login(page);
+    await page.goto('/portal');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page).toHaveURL(/\/projects/);
+  });
+
+  test('sidebar shows Αμοιβολόγιο link for self_hosted plan', async ({ page }) => {
+    await login(page);
+    await expect(page.locator('a[href="/fees"]')).toBeVisible({ timeout: 5_000 });
+  });
+});

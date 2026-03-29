@@ -21,6 +21,7 @@ const ProfilePage = lazy(() => import('./components/auth/ProfilePage.jsx'));
 const ClientPortal = lazy(() => import('./pages/ClientPortal.jsx'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard.jsx'));
 const FeesPage = lazy(() => import('./pages/FeesPage.jsx'));
+const TeeSyncPage = lazy(() => import('./pages/TeeSyncPage.jsx'));
 
 // Redirect to /login if not authenticated
 function RequireAuth({ children }) {
@@ -87,6 +88,8 @@ export default function App() {
             <Route path="clients/:id" element={<ClientDetail />} />
             <Route path="nok" element={<NokRulesViewer />} />
             <Route path="fees" element={<FeesPage />} />
+            <Route path="tee" element={<TeeSyncPage />} />
+            <Route path="portal" element={<Navigate to="/projects" replace />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="admin" element={
               <RequireSuperadmin><AdminDashboard /></RequireSuperadmin>
