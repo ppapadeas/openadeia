@@ -14,6 +14,7 @@
  *     It is registered with rawBody: true and skips JWT auth intentionally.
  */
 
+import db from '../config/database.js';
 import {
   createCheckoutSession,
   createPortalSession,
@@ -36,7 +37,7 @@ export default async function billingRoutes(fastify) {
 
       let tenant = null;
       try {
-        tenant = await fastify.knex('tenants').where({ id: tenantId }).first();
+        tenant = await db('tenants').where({ id: tenantId }).first();
       } catch {
         // tenants table not yet available (self-hosted / early install)
       }
@@ -97,7 +98,7 @@ export default async function billingRoutes(fastify) {
       // Fetch tenant (gracefully degrade if table missing)
       let tenant = { id: tenantId, email };
       try {
-        const row = await fastify.knex('tenants').where({ id: tenantId }).first();
+        const row = await db('tenants').where({ id: tenantId }).first();
         if (row) tenant = row;
       } catch { /* ok */ }
 
@@ -135,7 +136,7 @@ export default async function billingRoutes(fastify) {
 
       let tenant = null;
       try {
-        tenant = await fastify.knex('tenants').where({ id: tenantId }).first();
+        tenant = await db('tenants').where({ id: tenantId }).first();
       } catch { /* ok */ }
 
       if (!tenant || !tenant.stripe_customer_id) {

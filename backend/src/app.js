@@ -5,6 +5,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 
 import errorMonitor from './plugins/error-monitor.js';
+import tenantHookPlugin from './hooks/tenant.js';
 import auditHook from './hooks/audit.js';
 import authRoute from './routes/auth.js';
 import projectsRoute from './routes/projects.js';
@@ -21,8 +22,6 @@ import feesRoute from './routes/fees.js';
 import portalRoutes from './routes/portal.js';
 import adminRoute from './routes/admin.js';
 import tenantRoutes from './routes/tenant.js';
-import tenantRoute from './routes/tenant.js';
-import { LimitExceededError } from './errors/LimitExceededError.js';
 import billingRoutes from './routes/billing.js';
 
 /**
@@ -74,6 +73,9 @@ export async function buildApp(opts = {}) {
     }
   });
 
+  // ── Tenant hook decorator ────────────────────────────────────────────
+  await app.register(tenantHookPlugin);
+
   // ── Routes ──────────────────────────────────────────────────────────
   await app.register(authRoute, { prefix: '/api/auth' });
   await app.register(projectsRoute, { prefix: '/api/projects' });
@@ -89,44 +91,17 @@ export async function buildApp(opts = {}) {
   await app.register(feesRoute, { prefix: '/api/fees' });
   await app.register(portalRoutes, { prefix: '/api/portal' });
   await app.register(adminRoute, { prefix: '/api/admin' });
-  await app.register(tenantRoute, { prefix: '/api/tenant' });
+  await app.register(tenantRoutes, { prefix: '/api/tenant' });
 
   // ── Billing (SaaS only) ──────────────────────────────────────────────
-  // Register billing routes when SAAS_MODE=true or STRIPE_SECRET_KEY is present.
-  // This allows self-hosted installs to run without any Stripe configuration.
+  // Register when SAAS_MODE=true or STRIPE_SECRET_KEY is present.
+  // Self-hosted installs without Stripe config simply skip billing routes.
   if (process.env.SAAS_MODE === 'true' || process.env.STRIPE_SECRET_KEY) {
-    // Webhook needs raw body for Stripe signature verification.
-    // We add a content-type parser that stores the raw body buffer on the request.
-    app.addContentTypeParser(
-      'application/json',
-      { parseAs: 'buffer', override: false },
-      (req, body, done) => {
-        if (req.routeOptions?.config?.rawBody) {
-          req.rawBody = body;
-          done(null, JSON.parse(body));
-        } else {
-          done(null, JSON.parse(body));
-        }
-      }
-    );
     await app.register(billingRoutes, { prefix: '/api/billing' });
-    app.log.info('Billing routes registered (SAAS_MODE or STRIPE_SECRET_KEY detected)');
   }
 
-  // ── Global error handler for LimitExceededError ──────────────────────
-  app.setErrorHandler((error, _req, reply) => {
-    if (error instanceof LimitExceededError) {
-      return reply.code(402).send({
-        error: 'Έχετε φτάσει το όριο του πλάνου σας',
-        limitType: error.limitType,
-        current: error.current,
-        max: error.max,
-        upgradeRequired: true,
-      });
-    }
-    // Let Fastify handle the rest (preserves status code from thrown errors)
-    reply.send(error);
-  });
+  // ── Audit hook — auto-log all write operations ──────────────────────
+  app.addHook('onResponse', auditHook);
 
   // ── Health check ────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
