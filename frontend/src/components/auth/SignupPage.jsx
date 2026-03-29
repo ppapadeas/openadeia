@@ -8,6 +8,8 @@ export default function SignupPage() {
   const navigate = useNavigate();
   const setAuth = useAppStore((s) => s.setAuth);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [form, setForm] = useState({
     orgName: '',
     name: '',
@@ -65,12 +67,14 @@ export default function SignupPage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {/* Org Name */}
             <div>
-              <label className="label">Επωνυμία Μελέτης / Εταιρεία *</label>
+              <label htmlFor="signup-org" className="label">Επωνυμία Μελέτης / Εταιρεία *</label>
               <input
+                id="signup-org"
                 className="input"
                 placeholder="π.χ. Μελετητικό Γραφείο Παπαδόπουλος"
                 value={form.orgName}
                 onChange={(e) => set('orgName', e.target.value)}
+                autoComplete="organization"
                 required
                 minLength={2}
               />
@@ -81,12 +85,14 @@ export default function SignupPage() {
 
             {/* Full Name */}
             <div>
-              <label className="label">Ονοματεπώνυμο *</label>
+              <label htmlFor="signup-name" className="label">Ονοματεπώνυμο *</label>
               <input
+                id="signup-name"
                 className="input"
                 placeholder="π.χ. Γιώργης Παπαδόπουλος"
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
+                autoComplete="name"
                 required
                 minLength={2}
               />
@@ -94,43 +100,71 @@ export default function SignupPage() {
 
             {/* Email */}
             <div>
-              <label className="label">Email *</label>
+              <label htmlFor="signup-email" className="label">Email *</label>
               <input
+                id="signup-email"
                 className="input"
                 type="email"
                 placeholder="email@example.com"
                 value={form.email}
                 onChange={(e) => set('email', e.target.value)}
+                autoComplete="email"
                 required
               />
             </div>
 
             {/* Password */}
             <div>
-              <label className="label">Κωδικός *</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Τουλάχιστον 8 χαρακτήρες"
-                value={form.password}
-                onChange={(e) => set('password', e.target.value)}
-                required
-                minLength={8}
-              />
+              <label htmlFor="signup-password" className="label">Κωδικός *</label>
+              <div className="relative">
+                <input
+                  id="signup-password"
+                  className="input pr-10"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Τουλάχιστον 8 χαρακτήρες"
+                  value={form.password}
+                  onChange={(e) => set('password', e.target.value)}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors text-xs"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Απόκρυψη κωδικού' : 'Εμφάνιση κωδικού'}
+                >
+                  {showPassword ? '🙈' : '👁'}
+                </button>
+              </div>
             </div>
 
             {/* Confirm Password */}
             <div>
-              <label className="label">Επιβεβαίωση Κωδικού *</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Επαναλάβετε τον κωδικό"
-                value={form.confirmPassword}
-                onChange={(e) => set('confirmPassword', e.target.value)}
-                required
-                minLength={8}
-              />
+              <label htmlFor="signup-confirm" className="label">Επιβεβαίωση Κωδικού *</label>
+              <div className="relative">
+                <input
+                  id="signup-confirm"
+                  className="input pr-10"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Επαναλάβετε τον κωδικό"
+                  value={form.confirmPassword}
+                  onChange={(e) => set('confirmPassword', e.target.value)}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors text-xs"
+                  tabIndex={-1}
+                  aria-label={showConfirmPassword ? 'Απόκρυψη κωδικού' : 'Εμφάνιση κωδικού'}
+                >
+                  {showConfirmPassword ? '🙈' : '👁'}
+                </button>
+              </div>
             </div>
 
             {/* Trial info */}

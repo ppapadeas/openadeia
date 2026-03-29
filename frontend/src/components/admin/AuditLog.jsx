@@ -8,7 +8,7 @@
  * - Paginated table (100 entries per page)
  * - Filter by action type
  * - Color-coded action badges
- * - Expandable metadata rows
+ * - Expandable metadata rows (with chevron hint)
  * - CSV export button
  */
 
@@ -46,6 +46,19 @@ function ActorBadge({ type }) {
   return (
     <span className={`text-xs font-medium ${colors[type] || 'text-text-muted'}`}>
       {type}
+    </span>
+  );
+}
+
+// ── Chevron icon for expandable rows ────────────────────────────────
+
+function Chevron({ expanded }) {
+  return (
+    <span
+      className={`inline-block text-text-muted transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+      aria-hidden="true"
+    >
+      ›
     </span>
   );
 }
@@ -113,9 +126,9 @@ export default function AuditLog() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-base font-semibold text-text-primary">Audit Log</h2>
+          <h2 className="text-base font-semibold text-text-primary">Αρχείο Ενεργειών</h2>
           <p className="text-xs text-text-muted mt-0.5">
-            {meta.total.toLocaleString()} total entries
+            {meta.total.toLocaleString()} εγγραφές συνολικά
           </p>
         </div>
         <a
@@ -123,7 +136,7 @@ export default function AuditLog() {
           className="text-xs bg-accent-blue/10 text-accent-blue border border-accent-blue/20 px-3 py-1.5 rounded-lg font-medium hover:bg-accent-blue/20 transition-colors"
           download
         >
-          ↓ GDPR Export
+          ↓ Εξαγωγή GDPR
         </a>
       </div>
 
@@ -131,14 +144,14 @@ export default function AuditLog() {
       <div className="flex gap-3 mb-4">
         <input
           type="text"
-          placeholder="Filter by action…"
+          placeholder="Φίλτρο κατά ενέργεια…"
           value={filterAction}
           onChange={(e) => setFilterAction(e.target.value)}
           className="text-sm bg-bg-surface border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-blue/50 w-48"
         />
         <input
           type="text"
-          placeholder="Filter by resource…"
+          placeholder="Φίλτρο κατά πόρο…"
           value={filterResource}
           onChange={(e) => setFilterResource(e.target.value)}
           className="text-sm bg-bg-surface border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-blue/50 w-48"
@@ -148,7 +161,7 @@ export default function AuditLog() {
             onClick={() => { setFilterAction(''); setFilterResource(''); }}
             className="text-xs text-text-muted hover:text-text-primary transition-colors px-2"
           >
-            Clear
+            Εκκαθάριση
           </button>
         )}
       </div>
@@ -166,25 +179,26 @@ export default function AuditLog() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border-subtle">
-                <th className="text-left px-4 py-3 text-text-muted font-medium whitespace-nowrap">Timestamp</th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium">Actor</th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium">Action</th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium">Resource</th>
+                <th className="text-left px-4 py-3 text-text-muted font-medium whitespace-nowrap w-4"></th>
+                <th className="text-left px-4 py-3 text-text-muted font-medium whitespace-nowrap">Ημερομηνία</th>
+                <th className="text-left px-4 py-3 text-text-muted font-medium">Χρήστης</th>
+                <th className="text-left px-4 py-3 text-text-muted font-medium">Ενέργεια</th>
+                <th className="text-left px-4 py-3 text-text-muted font-medium">Πόρος</th>
                 <th className="text-left px-4 py-3 text-text-muted font-medium">IP</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
-                    Loading…
+                  <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
+                    Φόρτωση…
                   </td>
                 </tr>
               )}
               {!loading && entries.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
-                    No audit entries found
+                  <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
+                    Δεν βρέθηκαν εγγραφές
                   </td>
                 </tr>
               )}
@@ -194,7 +208,11 @@ export default function AuditLog() {
                     key={entry.id}
                     onClick={() => toggleExpand(entry.id)}
                     className="border-b border-border-subtle last:border-0 hover:bg-white/5 transition-colors cursor-pointer"
+                    title="Κλικ για λεπτομέρειες"
                   >
+                    <td className="pl-4 py-2.5 text-base text-text-muted">
+                      <Chevron expanded={expandedId === entry.id} />
+                    </td>
                     <td className="px-4 py-2.5 text-text-muted text-xs whitespace-nowrap font-mono">
                       {formatDate(entry.created_at)}
                     </td>
@@ -231,17 +249,17 @@ export default function AuditLog() {
                   </tr>
                   {expandedId === entry.id && (
                     <tr key={`${entry.id}-expand`} className="border-b border-border-subtle bg-white/3">
-                      <td colSpan={5} className="px-6 py-3">
+                      <td colSpan={6} className="px-6 py-3">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                           {entry.user_email && (
                             <div>
-                              <div className="text-text-muted mb-0.5">User Email</div>
+                              <div className="text-text-muted mb-0.5">Email Χρήστη</div>
                               <div className="text-text-primary font-mono">{entry.user_email}</div>
                             </div>
                           )}
                           {entry.resource_id && (
                             <div>
-                              <div className="text-text-muted mb-0.5">Resource ID</div>
+                              <div className="text-text-muted mb-0.5">ID Πόρου</div>
                               <div className="text-text-primary font-mono">{entry.resource_id}</div>
                             </div>
                           )}
@@ -253,7 +271,7 @@ export default function AuditLog() {
                           )}
                           {entry.metadata && (
                             <div className="md:col-span-3">
-                              <div className="text-text-muted mb-0.5">Metadata</div>
+                              <div className="text-text-muted mb-0.5">Μεταδεδομένα</div>
                               <pre className="text-text-primary font-mono bg-bg-base rounded p-2 overflow-x-auto text-xs">
                                 {JSON.stringify(entry.metadata, null, 2)}
                               </pre>
@@ -274,7 +292,7 @@ export default function AuditLog() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <div className="text-xs text-text-muted">
-            Page {page + 1} of {totalPages} · {meta.total.toLocaleString()} entries
+            Σελίδα {page + 1} από {totalPages} · {meta.total.toLocaleString()} εγγραφές
           </div>
           <div className="flex gap-2">
             <button
@@ -282,14 +300,14 @@ export default function AuditLog() {
               disabled={page === 0}
               className="text-xs px-3 py-1.5 bg-bg-surface border border-border-subtle rounded-lg text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              ← Previous
+              ← Προηγούμενη
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
               className="text-xs px-3 py-1.5 bg-bg-surface border border-border-subtle rounded-lg text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Next →
+              Επόμενη →
             </button>
           </div>
         </div>

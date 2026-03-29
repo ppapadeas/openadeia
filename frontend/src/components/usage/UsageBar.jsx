@@ -20,11 +20,11 @@ function formatBytes(bytes) {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
-/** Plan display names */
+/** Plan display names (Greek) */
 const PLAN_LABELS = {
-  free: 'Free',
+  free: 'Δωρεάν',
   pro: 'Pro',
-  enterprise: 'Enterprise',
+  enterprise: 'Εταιρικό',
   self_hosted: 'Self-Hosted',
 };
 
@@ -46,7 +46,28 @@ export default function UsageBar({ collapsed = false }) {
       .catch(() => setError(true));
   }, []);
 
-  if (error || !usage) return null;
+  // Show fallback UI on error (instead of silently disappearing)
+  if (error) {
+    if (collapsed) {
+      return (
+        <div
+          className="flex items-center justify-center py-2"
+          title="Αδυναμία φόρτωσης στοιχείων χρήσης"
+        >
+          <span className="text-base">⚠️</span>
+        </div>
+      );
+    }
+    return (
+      <div className="px-4 py-3 border-t border-border-subtle">
+        <div className="text-[10px] text-red-400 text-center">
+          ⚠️ Σφάλμα φόρτωσης χρήσης
+        </div>
+      </div>
+    );
+  }
+
+  if (!usage) return null;
 
   const { plan, projects, storage } = usage;
 
