@@ -1,11 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore.js';
+import useFeature from '../../hooks/useFeature.js';
 import UsageBar from '../usage/UsageBar.jsx';
 
-const NAV = [
+const BASE_NAV = [
   { to: '/projects', icon: '📁', label: 'Φάκελοι' },
   { to: '/clients',  icon: '👤', label: 'Πελάτες' },
-  { to: '/nok',      icon: '📋', label: 'ΝΟΚ Κανόνες' },
 ];
 
 const ADMIN_NAV = [
@@ -14,6 +14,21 @@ const ADMIN_NAV = [
 
 export default function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, logout, user } = useAppStore();
+
+  // Feature flags
+  const hasNok    = useFeature('nok');
+  const hasTee    = useFeature('tee');
+  const hasPortal = useFeature('portal');
+  const hasFees   = useFeature('fees');
+
+  // Build dynamic nav based on enabled features
+  const NAV = [
+    ...BASE_NAV,
+    ...(hasNok    ? [{ to: '/nok',    icon: '📋', label: 'ΝΟΚ Κανόνες'      }] : []),
+    ...(hasFees   ? [{ to: '/fees',   icon: '🧮', label: 'Αμοιβολόγιο'       }] : []),
+    ...(hasTee    ? [{ to: '/tee',    icon: '🏛️', label: 'ΤΕΕ Συγχρονισμός' }] : []),
+    ...(hasPortal ? [{ to: '/portal', icon: '🔗', label: 'Πύλη Πελάτη'       }] : []),
+  ];
   const navigate = useNavigate();
 
   const handleLogout = () => {

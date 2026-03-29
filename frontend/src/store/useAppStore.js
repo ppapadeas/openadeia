@@ -1,11 +1,23 @@
 import { create } from 'zustand';
+import { getFeaturesForPlan } from '../hooks/useFeature.js';
+
+/**
+ * Enrich a user object with a `features` array derived from their plan,
+ * unless an explicit features array is already provided by the backend.
+ */
+function enrichUser(user) {
+  if (!user) return null;
+  if (Array.isArray(user.features)) return user; // backend already sent features
+  return { ...user, features: getFeaturesForPlan(user.plan) };
+}
 
 // Load persisted auth from localStorage
 function loadAuth() {
   try {
     const token = localStorage.getItem('token');
     const user = localStorage.getItem('user');
-    return { token, user: user ? JSON.parse(user) : null };
+    const parsed = user ? JSON.parse(user) : null;
+    return { token, user: enrichUser(parsed) };
   } catch {
     return { token: null, user: null };
   }
@@ -20,14 +32,16 @@ const useAppStore = create((set) => ({
   isAuthenticated: !!initialToken,
 
   setAuth: (token, user) => {
+    const enriched = enrichUser(user);
     localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    set({ token, user, isAuthenticated: true });
+    localStorage.setItem('user', JSON.stringify(enriched));
+    set({ token, user: enriched, isAuthenticated: true });
   },
 
   updateUser: (user) => {
-    localStorage.setItem('user', JSON.stringify(user));
-    set({ user });
+    const enriched = enrichUser(user);
+    localStorage.setItem('user', JSON.stringify(enriched));
+    set({ user: enriched });
   },
 
   logout: () => {
