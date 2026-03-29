@@ -20,51 +20,41 @@ export default async function adminRoute(fastify) {
   // Falls back to a synthetic single-tenant entry when the tenants table
   // doesn't exist yet (self-hosted installations without migration 008).
   fastify.get('/tenants', authAndAdmin, async (req, reply) => {
+    const { limit = 50, offset = 0 } = req.query;
+    const parsedLimit = Math.min(parseInt(limit, 10) || 50, 500);
+    const parsedOffset = parseInt(offset, 10) || 0;
+
     const hasTenantsTable = await db.schema?.hasTable('tenants').catch(() => false) ?? false;
 
     if (hasTenantsTable) {
-      // Real multi-tenant mode: query the tenants table and join usage counts
-      const tenants = await db('tenants')
-        .select(
-          'tenants.id',
-          'tenants.slug',
-          'tenants.name',
-          'tenants.plan',
-          'tenants.status',
-          'tenants.stripe_customer_id',
-          'tenants.stripe_subscription_id',
-          'tenants.trial_ends_at',
-          'tenants.current_period_end',
-          'tenants.usage',
-          'tenants.limits',
-          'tenants.created_at',
-          'tenants.updated_at',
-        )
-        .orderBy('tenants.created_at', 'asc');
+      // Real multi-tenant mode: single aggregated query with JOIN counts
+      const [tenants, [{ count }]] = await Promise.all([
+        db('tenants as t')
+          .select(
+            't.id',
+            't.name',
+            't.slug',
+            't.plan',
+            't.status',
+            't.created_at',
+            db.raw('COUNT(DISTINCT p.id) as project_count'),
+            db.raw('COUNT(DISTINCT u.id) as user_count'),
+            db.raw('COALESCE(SUM(d.file_size), 0) as storage_used'),
+          )
+          .leftJoin('projects as p', 'p.tenant_id', 't.id')
+          .leftJoin('users as u', 'u.tenant_id', 't.id')
+          .leftJoin('documents as d', 'd.project_id', 'p.id')
+          .groupBy('t.id')
+          .orderBy('t.created_at', 'desc')
+          .limit(parsedLimit)
+          .offset(parsedOffset),
+        db('tenants').count('id as count'),
+      ]);
 
-      // Enrich each tenant with live counts
-      const enriched = await Promise.all(
-        tenants.map(async (t) => {
-          const [{ count: projects_count }] = await db('projects')
-            .where('tenant_id', t.id)
-            .count('id as count');
-          const [{ count: users_count }] = await db('users')
-            .where('tenant_id', t.id)
-            .count('id as count');
-          const [{ count: clients_count }] = await db('clients')
-            .where('tenant_id', t.id)
-            .count('id as count');
-
-          return {
-            ...t,
-            projects_count: parseInt(projects_count, 10),
-            users_count: parseInt(users_count, 10),
-            clients_count: parseInt(clients_count, 10),
-          };
-        })
-      );
-
-      return reply.send({ data: enriched, meta: { total: enriched.length } });
+      return reply.send({
+        data: tenants,
+        meta: { total: parseInt(count, 10), limit: parsedLimit, offset: parsedOffset },
+      });
     }
 
     // Fallback: self-hosted single-tenant — synthesise from raw counts
@@ -86,7 +76,7 @@ export default async function adminRoute(fastify) {
       },
     ];
 
-    reply.send({ data: tenants, meta: { total: tenants.length } });
+    reply.send({ data: tenants, meta: { total: tenants.length, limit: parsedLimit, offset: parsedOffset } });
   });
 
   // ── GET /api/admin/tenants/:id ─────────────────────────────────────

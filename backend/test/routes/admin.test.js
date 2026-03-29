@@ -9,6 +9,8 @@ const { mockDb, mockChain } = vi.hoisted(() => {
   const mockChain = {
     where: vi.fn().mockReturnThis(),
     whereNull: vi.fn().mockReturnThis(),
+    whereILike: vi.fn().mockReturnThis(),
+    orWhereILike: vi.fn().mockReturnThis(),
     select: vi.fn().mockReturnThis(),
     first: vi.fn().mockResolvedValue(null),
     insert: vi.fn().mockReturnThis(),
@@ -21,11 +23,13 @@ const { mockDb, mockChain } = vi.hoisted(() => {
     count: vi.fn().mockResolvedValue([{ count: '0' }]),
     sum: vi.fn().mockResolvedValue([{ total: 0 }]),
     groupBy: vi.fn().mockReturnThis(),
+    leftJoin: vi.fn().mockReturnThis(),
   };
   const mockDb = Object.assign(vi.fn(() => mockChain), {
     fn: { now: vi.fn(() => new Date().toISOString()) },
     transaction: vi.fn(async (cb) => cb(mockChain)),
     raw: vi.fn((sql) => sql),
+    schema: { hasTable: vi.fn().mockResolvedValue(false) },
   });
   return { mockDb, mockChain };
 });
@@ -68,6 +72,7 @@ describe('GET /api/admin/tenants', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockDb.schema.hasTable.mockResolvedValue(false);
     mockChain.count.mockResolvedValue([{ count: '10' }]);
     app = await buildApp();
     await app.ready();
@@ -116,7 +121,9 @@ describe('GET /api/admin/tenants', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('returns tenants list for superadmin', async () => {
+  it('returns synthetic fallback tenant list when tenants table is absent', async () => {
+    mockDb.schema.hasTable.mockResolvedValue(false);
+
     const token = app.jwt.sign({
       id: SUPERADMIN.id,
       email: SUPERADMIN.email,
@@ -135,11 +142,79 @@ describe('GET /api/admin/tenants', () => {
     const body = res.json();
     expect(Array.isArray(body.data)).toBe(true);
     expect(body.meta).toMatchObject({ total: expect.any(Number) });
-    // Phase-6 synthetic tenant
-    expect(body.data[0]).toMatchObject({
-      id: 'default',
+    // Fallback synthetic tenant
+    expect(body.data[0]).toMatchObject({ id: 'default', status: 'active' });
+  });
+
+  it('queries real tenants table with aggregated counts when table exists', async () => {
+    mockDb.schema.hasTable.mockResolvedValue(true);
+
+    const fakeTenant = {
+      id: 'tenant-uuid-1',
+      name: 'Acme Corp',
+      slug: 'acme',
+      plan: 'pro',
       status: 'active',
+      created_at: new Date().toISOString(),
+      project_count: '3',
+      user_count: '5',
+      storage_used: '102400',
+    };
+
+    // Promise.all: first resolves with tenant rows, second with count
+    mockChain.offset
+      .mockResolvedValueOnce([fakeTenant])  // tenant rows query
+    mockChain.count.mockResolvedValueOnce([{ count: '1' }]);  // total count query
+
+    const token = app.jwt.sign({
+      id: SUPERADMIN.id,
+      email: SUPERADMIN.email,
+      role: SUPERADMIN.role,
+      tenant_id: SUPERADMIN.tenant_id,
+      is_superadmin: true,
     });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/tenants?limit=25&offset=0',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.meta).toMatchObject({
+      total: 1,
+      limit: 25,
+      offset: 0,
+    });
+    // Must NOT be the fallback synthetic tenant
+    expect(body.data[0]).not.toMatchObject({ id: 'default' });
+    // Should have used leftJoin for JOIN query
+    expect(mockChain.leftJoin).toHaveBeenCalled();
+  });
+
+  it('supports pagination query params', async () => {
+    mockDb.schema.hasTable.mockResolvedValue(false);
+    mockChain.count.mockResolvedValue([{ count: '5' }]);
+
+    const token = app.jwt.sign({
+      id: SUPERADMIN.id,
+      email: SUPERADMIN.email,
+      role: SUPERADMIN.role,
+      tenant_id: SUPERADMIN.tenant_id,
+      is_superadmin: true,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/tenants?limit=10&offset=20',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.meta).toMatchObject({ limit: 10, offset: 20 });
   });
 });
 
