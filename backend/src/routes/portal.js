@@ -298,11 +298,16 @@ export default async function portalRoutes(fastify) {
     if (!portal) return reply.code(404).send({ error: 'Portal not found' });
     if (portal.status === 'draft') return reply.code(403).send({ error: 'Portal not yet active' });
 
-    // Fetch linked project info
+    // Fetch linked project info + tenant name
     const project = await db('projects').where({ id: portal.project_id }).first();
+    let tenantName = null;
+    if (project?.tenant_id) {
+      const tenant = await db('tenants').where({ id: project.tenant_id }).select('name').first();
+      tenantName = tenant?.name || null;
+    }
 
     const data = await loadPortalData(portal);
-    reply.send({ ...data, project_title: project?.title || '' });
+    reply.send({ ...data, project_title: project?.title || '', tenant_name: tenantName });
   });
 
   // ── PUBLIC: POST /p/:token/steps/:stepId/submit — submit form data ─

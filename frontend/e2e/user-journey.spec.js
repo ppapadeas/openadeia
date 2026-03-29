@@ -582,7 +582,7 @@ test.describe('Client Portal - Extended', () => {
 
     await page.goto(`/portal/${portalToken}`);
 
-    await expect(page.locator('text=Forma Architecture — Client Portal')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=Client Portal')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('h1')).toBeVisible();
   });
 
@@ -595,7 +595,7 @@ test.describe('Client Portal - Extended', () => {
     const portalToken = await createPortalToken(projectId, authToken);
 
     await page.goto(`/portal/${portalToken}`);
-    await expect(page.locator('text=Forma Architecture — Client Portal')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=Client Portal')).toBeVisible({ timeout: 10_000 });
 
     // Either steps are listed or the "no steps" empty state is shown
     const noSteps = page.locator('text=Δεν υπάρχουν βήματα ακόμα');
@@ -621,7 +621,7 @@ test.describe('Client Portal - Extended', () => {
 
     // Must NOT redirect to login
     await expect(freshPage).not.toHaveURL(/\/login/);
-    await expect(freshPage.locator('text=Forma Architecture — Client Portal')).toBeVisible({ timeout: 10_000 });
+    await expect(freshPage.locator('text=Client Portal')).toBeVisible({ timeout: 10_000 });
     await freshPage.close();
   });
 
@@ -653,7 +653,7 @@ test.describe('Client Portal - Extended', () => {
     }).catch(() => { /* step creation optional — portal may not expose ID */ });
 
     await page.goto(`/portal/${portalToken}`);
-    await expect(page.locator('text=Forma Architecture — Client Portal')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=Client Portal')).toBeVisible({ timeout: 10_000 });
     // Progress bar or steps/empty state — either is correct
     const bodyText = await page.locator('body').textContent();
     expect(bodyText).toBeTruthy();

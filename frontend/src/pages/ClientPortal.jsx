@@ -68,7 +68,7 @@ export default function ClientPortal() {
             <div className="w-10 h-10 rounded-lg bg-accent-blue/20 flex items-center justify-center text-xl">🏛</div>
             <div>
               <h1 className="font-bold text-lg">{portal.project_title || 'Φάκελος Αδειοδότησης'}</h1>
-              <p className="text-text-muted text-xs">Forma Architecture — Client Portal</p>
+              <p className="text-text-muted text-xs">{portal.tenant_name ? `${portal.tenant_name} — ` : ''}Client Portal</p>
             </div>
           </div>
 
