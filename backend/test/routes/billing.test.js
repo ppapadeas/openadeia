@@ -257,4 +257,396 @@ describe('Billing routes — STRIPE configured', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ error: expect.stringContaining('stripe-signature') });
   });
+
+  // ── GET /subscription — detailed scenarios ──────────────────────────
+
+  it('GET /api/billing/subscription returns plan limits', async () => {
+    mockChain.first.mockResolvedValueOnce({
+      id: TENANT_USER.tenant_id,
+      plan: 'pro',
+      subscription_status: 'active',
+      stripe_customer_id: 'cus_test123',
+      stripe_subscription_id: 'sub_test123',
+      subscription_period_end: null,
+    });
+
+    const token = app.jwt.sign({
+      id: TENANT_USER.id,
+      email: TENANT_USER.email,
+      role: TENANT_USER.role,
+      tenantId: TENANT_USER.tenant_id,
+      is_superadmin: false,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/billing/subscription',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.plan).toBe('pro');
+    expect(body.status).toBe('active');
+    expect(body.limits).toBeDefined();
+    expect(body.limits).toHaveProperty('projects_max');
+    expect(body.limits).toHaveProperty('storage_max_bytes');
+    expect(body.limits).toHaveProperty('team_max');
+    expect(body.stripe_customer_id).toBe('cus_test123');
+    expect(body.subscription_id).toBe('sub_test123');
+  });
+
+  it('GET /api/billing/subscription returns self_hosted plan when DB has no tenant', async () => {
+    mockChain.first.mockResolvedValueOnce(null);
+
+    const token = app.jwt.sign({
+      id: TENANT_USER.id,
+      email: TENANT_USER.email,
+      role: TENANT_USER.role,
+      tenantId: TENANT_USER.tenant_id,
+      is_superadmin: false,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/billing/subscription',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.plan).toBe('self_hosted');
+    expect(body.limits.projects_max).toBe(-1);
+    expect(body.stripe_customer_id).toBeNull();
+  });
+
+  // ── POST /checkout — additional scenarios ───────────────────────────
+
+  it('POST /api/billing/checkout returns 400 for invalid plan', async () => {
+    const token = app.jwt.sign({
+      id: TENANT_USER.id,
+      email: TENANT_USER.email,
+      role: TENANT_USER.role,
+      tenantId: TENANT_USER.tenant_id,
+      is_superadmin: false,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        plan: 'free',
+        success_url: 'https://example.com/success',
+        cancel_url: 'https://example.com/cancel',
+      },
+    });
+
+    // 'free' is not in the allowed enum (only 'pro' and 'enterprise')
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /api/billing/checkout returns 502 when Stripe throws', async () => {
+    const { createCheckoutSession } = await import('../../src/services/billing.js');
+    createCheckoutSession.mockRejectedValueOnce(new Error('Stripe API down'));
+
+    mockChain.first.mockResolvedValueOnce({ id: TENANT_USER.tenant_id, email: 'admin@acme.gr' });
+
+    const token = app.jwt.sign({
+      id: TENANT_USER.id,
+      email: TENANT_USER.email,
+      role: TENANT_USER.role,
+      tenantId: TENANT_USER.tenant_id,
+      is_superadmin: false,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        plan: 'pro',
+        success_url: 'https://example.com/success',
+        cancel_url: 'https://example.com/cancel',
+      },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: 'Stripe API down' });
+  });
+
+  // ── POST /portal — additional scenarios ─────────────────────────────
+
+  it('POST /api/billing/portal creates session when stripe_customer_id exists', async () => {
+    const { createPortalSession } = await import('../../src/services/billing.js');
+    createPortalSession.mockResolvedValueOnce({ url: 'https://billing.stripe.com/session/bps_test' });
+
+    mockChain.first.mockResolvedValueOnce({
+      id: TENANT_USER.tenant_id,
+      plan: 'pro',
+      stripe_customer_id: 'cus_test123',
+    });
+
+    const token = app.jwt.sign({
+      id: TENANT_USER.id,
+      email: TENANT_USER.email,
+      role: TENANT_USER.role,
+      tenantId: TENANT_USER.tenant_id,
+      is_superadmin: false,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/portal',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { return_url: 'https://example.com/billing' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      url: expect.stringContaining('stripe.com'),
+    });
+  });
+
+  it('POST /api/billing/portal returns 401 without token', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/portal',
+      payload: { return_url: 'https://example.com/billing' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  // ── POST /webhook — event handler scenarios ──────────────────────────
+
+  it('POST /api/billing/webhook returns 400 for invalid signature', async () => {
+    const { constructWebhookEvent } = await import('../../src/services/billing.js');
+    constructWebhookEvent.mockImplementationOnce(() => {
+      throw new Error('No signatures found matching the expected signature for payload');
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      payload: '{"type":"checkout.session.completed"}',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=invalid,v1=badsig',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining('verification failed') });
+  });
+
+  it('POST /api/billing/webhook handles checkout.session.completed', async () => {
+    const { constructWebhookEvent, updateTenantSubscription } = await import('../../src/services/billing.js');
+
+    constructWebhookEvent.mockReturnValueOnce({
+      id: 'evt_test_checkout',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_test_123',
+          client_reference_id: String(TENANT_USER.tenant_id),
+          customer: 'cus_new_test',
+          subscription: 'sub_new_test',
+          line_items: null,
+        },
+      },
+    });
+    updateTenantSubscription.mockResolvedValueOnce();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      payload: '{"type":"checkout.session.completed"}',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=1234,v1=valid',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ received: true });
+    expect(updateTenantSubscription).toHaveBeenCalledWith(
+      String(TENANT_USER.tenant_id),
+      expect.objectContaining({
+        stripe_customer_id: 'cus_new_test',
+        stripe_subscription_id: 'sub_new_test',
+        subscription_status: 'active',
+      })
+    );
+  });
+
+  it('POST /api/billing/webhook handles customer.subscription.updated', async () => {
+    const { constructWebhookEvent, updateTenantSubscription, getTenantByStripeCustomer } = await import('../../src/services/billing.js');
+
+    constructWebhookEvent.mockReturnValueOnce({
+      id: 'evt_test_sub_updated',
+      type: 'customer.subscription.updated',
+      data: {
+        object: {
+          id: 'sub_test123',
+          status: 'active',
+          customer: 'cus_test123',
+          current_period_end: 1800000000,
+          metadata: { tenant_id: String(TENANT_USER.tenant_id) },
+          items: { data: [{ price: { id: 'price_test_pro' } }] },
+        },
+      },
+    });
+    updateTenantSubscription.mockResolvedValueOnce();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      payload: '{"type":"customer.subscription.updated"}',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=1234,v1=valid',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ received: true });
+    expect(updateTenantSubscription).toHaveBeenCalledWith(
+      String(TENANT_USER.tenant_id),
+      expect.objectContaining({
+        subscription_status: 'active',
+        stripe_subscription_id: 'sub_test123',
+      })
+    );
+  });
+
+  it('POST /api/billing/webhook handles customer.subscription.deleted (downgrade to free)', async () => {
+    const { constructWebhookEvent, updateTenantSubscription, getTenantByStripeCustomer } = await import('../../src/services/billing.js');
+
+    constructWebhookEvent.mockReturnValueOnce({
+      id: 'evt_test_sub_deleted',
+      type: 'customer.subscription.deleted',
+      data: {
+        object: {
+          id: 'sub_test123',
+          customer: 'cus_test123',
+          metadata: { tenant_id: String(TENANT_USER.tenant_id) },
+        },
+      },
+    });
+    updateTenantSubscription.mockResolvedValueOnce();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      payload: '{"type":"customer.subscription.deleted"}',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=1234,v1=valid',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ received: true });
+    expect(updateTenantSubscription).toHaveBeenCalledWith(
+      String(TENANT_USER.tenant_id),
+      expect.objectContaining({
+        plan: 'free',
+        subscription_status: 'canceled',
+        stripe_subscription_id: null,
+      })
+    );
+  });
+
+  it('POST /api/billing/webhook handles invoice.payment_failed (marks past_due)', async () => {
+    const { constructWebhookEvent, updateTenantSubscription, getTenantByStripeCustomer } = await import('../../src/services/billing.js');
+
+    constructWebhookEvent.mockReturnValueOnce({
+      id: 'evt_test_payment_failed',
+      type: 'invoice.payment_failed',
+      data: {
+        object: {
+          id: 'in_test123',
+          customer: 'cus_test123',
+          subscription_details: {
+            metadata: { tenant_id: String(TENANT_USER.tenant_id) },
+          },
+        },
+      },
+    });
+    updateTenantSubscription.mockResolvedValueOnce();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      payload: '{"type":"invoice.payment_failed"}',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=1234,v1=valid',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ received: true });
+    expect(updateTenantSubscription).toHaveBeenCalledWith(
+      String(TENANT_USER.tenant_id),
+      { subscription_status: 'past_due' }
+    );
+  });
+
+  it('POST /api/billing/webhook returns 200 even when handler throws (Stripe retry prevention)', async () => {
+    const { constructWebhookEvent, updateTenantSubscription } = await import('../../src/services/billing.js');
+
+    constructWebhookEvent.mockReturnValueOnce({
+      id: 'evt_test_error',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_test_error',
+          client_reference_id: String(TENANT_USER.tenant_id),
+          customer: 'cus_error',
+          subscription: 'sub_error',
+          line_items: null,
+        },
+      },
+    });
+    // Simulate handler failure
+    updateTenantSubscription.mockRejectedValueOnce(new Error('DB connection lost'));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      payload: '{"type":"checkout.session.completed"}',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=1234,v1=valid',
+      },
+    });
+
+    // Must return 200 even on internal errors (prevent Stripe retries)
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ received: true });
+  });
+
+  it('POST /api/billing/webhook handles unknown event types gracefully', async () => {
+    const { constructWebhookEvent } = await import('../../src/services/billing.js');
+
+    constructWebhookEvent.mockReturnValueOnce({
+      id: 'evt_test_unknown',
+      type: 'some.unknown.event',
+      data: { object: {} },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      payload: '{"type":"some.unknown.event"}',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=1234,v1=valid',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ received: true });
+  });
 });
