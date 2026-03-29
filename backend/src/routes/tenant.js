@@ -36,7 +36,8 @@ export default async function tenantRoutes(fastify) {
   // ── GET /api/tenant/usage ───────────────────────────────────────────
   // Returns current usage vs plan limits. Requires authentication (any role).
   fastify.get('/usage', { onRequest: [fastify.authenticate] }, async (req, reply) => {
-    const tenantId = getCurrentTenantId();
+    // Use JWT tenant_id if present (multi-tenant); fall back to Phase-4 stub for self-hosted
+    const tenantId = req.user?.tenant_id ?? getCurrentTenantId();
     const stats = await getUsageStats(tenantId);
     reply.send({ data: stats });
   });
