@@ -2,6 +2,11 @@ import crypto from 'crypto';
 import db from '../config/database.js';
 import minioClient, { BUCKET, buildPath } from '../config/minio.js';
 import { updateDocumentSchema, zodValidator } from '../middleware/validate.js';
+import {
+  checkStorageLimit,
+  incrementStorageUsed,
+  getCurrentTenantId,
+} from '../services/usage.js';
 
 export default async function documentsRoute(fastify) {
   // GET /api/projects/:id/documents
@@ -40,6 +45,9 @@ export default async function documentsRoute(fastify) {
       return reply.code(400).send({ error: 'Missing file or doc_type' });
     }
 
+    // Check storage limit before uploading
+    await checkStorageLimit(getCurrentTenantId(), fileBuffer.length);
+
     const fileHash = hash.digest('hex');
     const category = ['arch', 'static', 'mech', 'energy', 'passive_fire', 'active_fire', 'env', 'acoustic', 'geo', 'arch_cat1'].includes(docType)
       ? 'studies' : 'documents';
@@ -77,6 +85,10 @@ export default async function documentsRoute(fastify) {
     }
 
     await db('projects').where({ id: req.params.id }).update({ updated_at: db.fn.now() });
+
+    // Update storage usage counter
+    await incrementStorageUsed(getCurrentTenantId(), fileBuffer.length);
+
     reply.code(201).send(doc);
   });
 

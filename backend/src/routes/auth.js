@@ -39,6 +39,12 @@ export default async function authRoute(fastify) {
       return reply.code(409).send({ error: 'Υπάρχει ήδη λογαριασμός με αυτό το email' });
     }
 
+    // Resolve tenant — for self-hosted there's exactly one tenant
+    const tenant = await db('tenants').where({ status: 'active' }).orderBy('created_at', 'asc').first();
+    if (!tenant) {
+      return reply.code(500).send({ error: 'No active tenant found' });
+    }
+
     const password_hash = await bcrypt.hash(password, 12);
     const [user] = await db('users').insert({
       email,
@@ -46,9 +52,19 @@ export default async function authRoute(fastify) {
       password_hash,
       amh: amh || null,
       role: 'engineer',
-    }).returning(['id', 'email', 'name', 'role', 'amh', 'created_at']);
+      tenant_id: tenant.id,
+    }).returning(['id', 'email', 'name', 'role', 'amh', 'tenant_id', 'created_at']);
 
-    const token = fastify.jwt.sign({ id: user.id, email: user.email, role: user.role }, { expiresIn: '7d' });
+    const token = fastify.jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        tenant_id: user.tenant_id,
+        is_superadmin: user.is_superadmin ?? false,
+      },
+      { expiresIn: '7d' }
+    );
     reply.code(201).send({ token, user });
   });
 
@@ -66,15 +82,35 @@ export default async function authRoute(fastify) {
       return reply.code(401).send({ error: 'Λάθος email ή κωδικός' });
     }
 
-    const token = fastify.jwt.sign({ id: user.id, email: user.email, role: user.role }, { expiresIn: '7d' });
-    reply.send({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, amh: user.amh } });
+    const token = fastify.jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        tenant_id: user.tenant_id,
+        is_superadmin: user.is_superadmin ?? false,
+      },
+      { expiresIn: '7d' }
+    );
+    reply.send({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        amh: user.amh,
+        tenant_id: user.tenant_id,
+        is_superadmin: user.is_superadmin ?? false,
+      },
+    });
   });
 
   // ── GET /api/auth/me ───────────────────────────────────────────────
   fastify.get('/me', { onRequest: [fastify.authenticate] }, async (req, reply) => {
     const user = await db('users')
       .where({ id: req.user.id })
-      .select('id', 'email', 'name', 'role', 'amh', 'tee_username', 'created_at')
+      .select('id', 'email', 'name', 'role', 'amh', 'tee_username', 'tenant_id', 'created_at', 'is_superadmin')
       .first();
     if (!user) return reply.code(404).send({ error: 'User not found' });
     reply.send(user);

@@ -1,5 +1,11 @@
 import db from '../config/database.js';
 import { createProjectSchema, updateProjectSchema, zodValidator } from '../middleware/validate.js';
+import {
+  checkProjectLimit,
+  decrementProjectCount,
+  incrementProjectCount,
+  getCurrentTenantId,
+} from '../services/usage.js';
 
 export default async function projectsRoute(fastify) {
   // GET /api/projects
@@ -36,6 +42,10 @@ export default async function projectsRoute(fastify) {
   // POST /api/projects
   fastify.post('/', { preHandler: zodValidator(createProjectSchema) }, async (req, reply) => {
     const body = req.body;
+    const tenantId = getCurrentTenantId();
+
+    // Check plan limit before creating
+    await checkProjectLimit(tenantId);
 
     // Generate project code
     const [{ count }] = await db('projects').count('id as count');
@@ -53,6 +63,9 @@ export default async function projectsRoute(fastify) {
       from_stage: null,
       to_stage: 'init',
     });
+
+    // Update usage counters (no-op in Phase 4, ready for Phase 5 tenants table)
+    await incrementProjectCount(tenantId);
 
     reply.code(201).send(project);
   });
@@ -92,6 +105,10 @@ export default async function projectsRoute(fastify) {
       .update({ deleted: true, updated_at: db.fn.now() })
       .returning('id');
     if (!updated) return reply.code(404).send({ error: 'Not found' });
+
+    // Update usage counters
+    await decrementProjectCount(getCurrentTenantId());
+
     reply.send({ success: true });
   });
 

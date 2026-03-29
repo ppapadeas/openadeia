@@ -9,11 +9,19 @@ import NokRulesViewer from './components/nok/RulesViewer.jsx';
 import LoginPage from './components/auth/LoginPage.jsx';
 import ProfilePage from './components/auth/ProfilePage.jsx';
 import ClientPortal from './pages/ClientPortal.jsx';
+import AdminDashboard from './pages/AdminDashboard.jsx';
 
 // Redirect to /login if not authenticated
 function RequireAuth({ children }) {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return children;
+}
+
+// Redirect to / if not superadmin
+function RequireSuperadmin({ children }) {
+  const user = useAppStore((s) => s.user);
+  if (!user?.is_superadmin) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -36,6 +44,9 @@ export default function App() {
           <Route path="clients/:id" element={<ClientDetail />} />
           <Route path="nok" element={<NokRulesViewer />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="admin" element={
+            <RequireSuperadmin><AdminDashboard /></RequireSuperadmin>
+          } />
         </Route>
       </Routes>
     </BrowserRouter>

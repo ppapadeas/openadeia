@@ -1,10 +1,15 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore.js';
+import UsageBar from '../usage/UsageBar.jsx';
 
 const NAV = [
   { to: '/projects', icon: '📁', label: 'Φάκελοι' },
   { to: '/clients',  icon: '👤', label: 'Πελάτες' },
   { to: '/nok',      icon: '📋', label: 'ΝΟΚ Κανόνες' },
+];
+
+const ADMIN_NAV = [
+  { to: '/admin', icon: '🛡️', label: 'Admin Panel' },
 ];
 
 export default function Sidebar() {
@@ -54,6 +59,33 @@ export default function Sidebar() {
             {!sidebarCollapsed && <span className="truncate">{label}</span>}
           </NavLink>
         ))}
+
+        {/* Superadmin section */}
+        {user?.is_superadmin && (
+          <>
+            {!sidebarCollapsed && (
+              <div className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                Platform
+              </div>
+            )}
+            {sidebarCollapsed && <div className="my-2 mx-4 border-t border-border-subtle" />}
+            {ADMIN_NAV.map(({ to, icon, label }) => (
+              <NavLink key={to} to={to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors mx-2 rounded-lg mb-0.5 ${
+                    isActive
+                      ? 'bg-accent-blue/10 text-accent-blue'
+                      : 'text-text-secondary hover:bg-white/5 hover:text-text-primary'
+                  }`
+                }
+                title={sidebarCollapsed ? label : undefined}
+              >
+                <span className="text-base flex-shrink-0">{icon}</span>
+                {!sidebarCollapsed && <span className="truncate">{label}</span>}
+              </NavLink>
+            ))}
+          </>
+        )}
       </nav>
 
       {/* User / Profile / Logout */}

@@ -35,6 +35,7 @@
     "pg": "^8.11.5",
     "pino-pretty": "^11.0.0",
     "playwright-core": "^1.46.0",
+    "stripe": "^21.0.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
