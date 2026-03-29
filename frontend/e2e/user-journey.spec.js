@@ -74,8 +74,8 @@ test.describe('Project Management', () => {
   test('create a new building permit project', async ({ page }) => {
     await login(page);
     await createProject(page);
-    // Should show project detail with stage indicator
-    await expect(page.locator('text=Καταχώρηση')).toBeVisible();
+    // Should show project detail with stage indicator (use first() to avoid strict mode violation)
+    await expect(page.locator('text=Καταχώρηση').first()).toBeVisible();
   });
 
   test('view project detail tabs', async ({ page }) => {
