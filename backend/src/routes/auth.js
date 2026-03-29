@@ -31,7 +31,7 @@ function slugify(str) {
 async function uniqueSlug(base) {
   let slug = base;
   let attempt = 0;
-  while (true) {
+  while (true) { // eslint-disable-line no-constant-condition
     const existing = await db('tenants').where({ slug }).first();
     if (!existing) return slug;
     attempt++;
