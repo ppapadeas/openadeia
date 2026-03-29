@@ -343,6 +343,7 @@ export default async function authRoute(fastify) {
         amh: user.amh,
         tenant_id: user.tenant_id || null,
         is_superadmin: user.is_superadmin ?? false,
+        plan: tenantInfo?.plan || null,
       },
       tenant: tenantInfo,
     });

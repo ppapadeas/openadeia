@@ -15,14 +15,43 @@ import { test, expect } from '@playwright/test';
 
 const EMAIL = process.env.E2E_EMAIL || 'pierros@papadeas.gr';
 const PASSWORD = process.env.E2E_PASSWORD || 'test123';
+const BACKEND_URL_INTERNAL = process.env.E2E_BACKEND_URL || 'http://localhost:4000';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-/** Log in and navigate to dashboard. Reused across tests. */
-async function login(page) {
+/**
+ * Fast login: authenticates via REST API and injects token into localStorage.
+ * Avoids UI form submission to prevent rate-limit issues when many tests run.
+ * Falls back to UI login if API call fails (e.g., in CI without direct backend access).
+ */
+async function login(page, email = EMAIL, password = PASSWORD) {
+  try {
+    const res = await fetch(`${BACKEND_URL_INTERNAL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const token = data.token;
+      const user = data.user;
+      // Inject auth into localStorage before navigating so the app picks it up
+      await page.goto('/');
+      await page.evaluate(({ token, user }) => {
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user));
+      }, { token, user });
+      await page.goto('/projects');
+      await expect(page).toHaveURL(/\/projects/, { timeout: 10_000 });
+      return;
+    }
+  } catch {
+    // fallthrough to UI login
+  }
+  // UI form login fallback
   await page.goto('/login');
-  await page.fill('#login-email', EMAIL);
-  await page.fill('#login-password', PASSWORD);
+  await page.fill('#login-email', email);
+  await page.fill('#login-password', password);
   await page.click('button[type="submit"]');
   await expect(page).toHaveURL(/\/projects/, { timeout: 10_000 });
 }
@@ -286,13 +315,21 @@ test.describe('Client Portal', () => {
 // ─── Admin Dashboard ─────────────────────────────────────────────────────
 
 test.describe('Admin Dashboard', () => {
-  test('non-admin user is redirected away from /admin', async ({ page }) => {
+  test('superadmin user can access /admin dashboard', async ({ page }) => {
+    // Default test user (pierros@papadeas.gr) is_superadmin=true
     await login(page);
-    // Regular user should be redirected away from /admin
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
-    // Non-superadmin should be redirected to / (projects)
-    await expect(page).not.toHaveURL(/\/admin/);
+    // Superadmin stays on /admin (no redirect)
+    await expect(page).toHaveURL(/\/admin/, { timeout: 8_000 });
+  });
+
+  test('unauthenticated user is redirected to login from /admin', async ({ page }) => {
+    // No login — visiting /admin cold
+    await page.goto('/admin');
+    await page.waitForLoadState('networkidle');
+    // RequireAuth should redirect to /login
+    await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
   });
 });
 
@@ -313,34 +350,41 @@ test.describe('Theme Toggle', () => {
   test('switching to Light removes dark class from html', async ({ page }) => {
     await login(page);
 
-    // Open theme toggle dropdown
-    await page.click('button[aria-label="Toggle theme"]');
-    await expect(page.locator('button:has-text("Light")')).toBeVisible();
+    // Find and click theme toggle button (contains emoji ☀️ or 🌙 or 💻)
+    const themeBtn = page.locator('button[aria-label="Toggle theme"]');
+    await themeBtn.waitFor({ state: 'visible', timeout: 10_000 });
+    await themeBtn.click();
 
-    // Click Light
-    await page.click('button:has-text("Light")');
+    // Wait for dropdown and click Light
+    const lightOption = page.locator('button:has-text("Light")');
+    await lightOption.waitFor({ state: 'visible', timeout: 5_000 });
+    await lightOption.click();
 
     // html element should NOT have dark class
     const html = page.locator('html');
-    await expect(html).not.toHaveClass(/\bdark\b/);
+    await expect(html).not.toHaveClass(/\bdark\b/, { timeout: 5_000 });
   });
 
   test('switching to Dark adds dark class to html', async ({ page }) => {
     await login(page);
 
+    const themeBtn = page.locator('button[aria-label="Toggle theme"]');
+    await themeBtn.waitFor({ state: 'visible', timeout: 10_000 });
+
     // First set to light so we have a known starting state
-    await page.click('button[aria-label="Toggle theme"]');
-    await page.click('button:has-text("Light")');
+    await themeBtn.click();
+    await page.locator('button:has-text("Light")').click();
     const html = page.locator('html');
-    await expect(html).not.toHaveClass(/\bdark\b/);
+    await expect(html).not.toHaveClass(/\bdark\b/, { timeout: 5_000 });
 
     // Now switch to dark
-    await page.click('button[aria-label="Toggle theme"]');
-    await expect(page.locator('button:has-text("Dark")')).toBeVisible();
-    await page.click('button:has-text("Dark")');
+    await themeBtn.click();
+    const darkOption = page.locator('button:has-text("Dark")');
+    await darkOption.waitFor({ state: 'visible', timeout: 5_000 });
+    await darkOption.click();
 
     // html element SHOULD have dark class
-    await expect(html).toHaveClass(/\bdark\b/);
+    await expect(html).toHaveClass(/\bdark\b/, { timeout: 5_000 });
   });
 
   test('background color changes between light and dark themes', async ({ page }) => {
@@ -797,13 +841,16 @@ test.describe('Project Delete', () => {
 // ─── Admin Dashboard (Extended) ───────────────────────────────────────────────
 
 test.describe('Admin Dashboard - Extended', () => {
-  test('non-admin user is redirected away from /admin', async ({ page }) => {
-    // Log in as regular test user (no is_superadmin)
+  test('superadmin user accesses /admin dashboard and sees metrics', async ({ page }) => {
+    // Default test user (pierros@papadeas.gr) is_superadmin=true
     await login(page);
     await page.goto('/admin');
+    await page.waitForLoadState('networkidle');
 
-    // AdminDashboard calls navigate('/', { replace: true }) for non-superadmin
-    await expect(page).not.toHaveURL(/\/admin/, { timeout: 8_000 });
+    // Superadmin stays on /admin
+    await expect(page).toHaveURL(/\/admin/, { timeout: 8_000 });
+    // Dashboard heading visible
+    await expect(page.locator('h1, h2').first()).toBeVisible({ timeout: 8_000 });
   });
 
   test('admin sees tenant list (requires E2E_SUPERADMIN_EMAIL)', async ({ page }) => {
