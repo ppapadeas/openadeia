@@ -88,6 +88,11 @@ export default function Sidebar() {
         )}
       </nav>
 
+      {/* Usage Bar */}
+      <div className="flex-shrink-0">
+        <UsageBar collapsed={sidebarCollapsed} />
+      </div>
+
       {/* User / Profile / Logout */}
       <div className="border-t border-border-subtle flex-shrink-0">
         <NavLink to="/profile"

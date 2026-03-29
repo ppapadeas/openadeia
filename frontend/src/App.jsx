@@ -7,6 +7,9 @@ import ClientList from './components/clients/ClientList.jsx';
 import ClientDetail from './components/clients/ClientDetail.jsx';
 import NokRulesViewer from './components/nok/RulesViewer.jsx';
 import LoginPage from './components/auth/LoginPage.jsx';
+import SignupPage from './components/auth/SignupPage.jsx';
+import ForgotPasswordPage from './components/auth/ForgotPasswordPage.jsx';
+import ResetPasswordPage from './components/auth/ResetPasswordPage.jsx';
 import ProfilePage from './components/auth/ProfilePage.jsx';
 import ClientPortal from './pages/ClientPortal.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
@@ -32,6 +35,9 @@ export default function App() {
         {/* Public routes — no auth required */}
         <Route path="/portal/:token" element={<ClientPortal />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
         {/* Authenticated shell */}
         <Route path="/" element={

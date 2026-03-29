@@ -109,6 +109,30 @@ export const registerSchema = z.object({
   amh: z.number().int().positive().optional(),
 });
 
+export const signupOrgSchema = z.object({
+  email: z.string().email().max(255),
+  name: z.string().min(2).max(255),
+  password: z.string().min(8).max(128),
+  orgName: z.string().min(2).max(255),
+  confirmPassword: z.string().min(8).max(128).optional(),
+}).refine((data) => !data.confirmPassword || data.password === data.confirmPassword, {
+  message: 'Οι κωδικοί δεν ταιριάζουν',
+  path: ['confirmPassword'],
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email().max(255),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8).max(128),
+});
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1),
+});
+
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),

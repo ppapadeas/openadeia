@@ -1,13 +1,8 @@
 /**
- * Migration 008 — Audit Log & GDPR Compliance
+ * Migration 009 — Audit Log & GDPR Compliance
  *
  * Creates the audit_log table for tracking all state-changing operations.
- *
- * Note on tenant_id: The tenants table does not yet exist in Phase 6 (single-tenant).
- * We store tenant_id as a nullable UUID without a FK constraint for now.
- * When the tenants table is added (Phase 4 multi-tenancy), add:
- *   ALTER TABLE audit_log ADD CONSTRAINT fk_audit_tenant
- *     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+ * tenant_id FK references the tenants table created in 008_multitenancy.
  *
  * actor_type values: user | portal_client | system | api
  */
@@ -15,7 +10,7 @@
 export async function up(knex) {
   await knex.schema.createTable('audit_log', (t) => {
     t.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    // tenant_id: nullable UUID — no FK yet (tenants table not created until Phase 4)
+    // tenant_id: nullable, FK to tenants if that table exists (created in 008_multitenancy/onboarding)
     t.uuid('tenant_id').nullable();
     t.string('actor_type', 20).notNullable(); // user | portal_client | system | api
     t.string('actor_id', 100).nullable();
@@ -32,14 +27,22 @@ export async function up(knex) {
   await knex.raw(
     'CREATE INDEX idx_audit_tenant_created ON audit_log(tenant_id, created_at DESC)'
   );
-
-  // Additional useful indexes
   await knex.raw(
     'CREATE INDEX idx_audit_user ON audit_log(user_id, created_at DESC)'
   );
   await knex.raw(
     'CREATE INDEX idx_audit_action ON audit_log(action, created_at DESC)'
   );
+
+  // Add FK to tenants if the table exists (created in 008_multitenancy)
+  const hasTenantsTable = await knex.schema.hasTable('tenants');
+  if (hasTenantsTable) {
+    await knex.raw(`
+      ALTER TABLE audit_log
+        ADD CONSTRAINT fk_audit_tenant
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    `);
+  }
 }
 
 export async function down(knex) {

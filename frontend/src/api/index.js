@@ -23,6 +23,18 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+
+    // 402 Payment Required — plan limit exceeded
+    if (err.response?.status === 402) {
+      const data = err.response?.data || {};
+      const limitError = new Error(data.error || 'Έχετε φτάσει το όριο του πλάνου σας');
+      limitError.isLimitExceeded = true;
+      limitError.limitType = data.limitType;
+      limitError.current = data.current;
+      limitError.max = data.max;
+      return Promise.reject(limitError);
+    }
+
     const msg = err.response?.data?.error || err.message || 'Unknown error';
     return Promise.reject(new Error(msg));
   }

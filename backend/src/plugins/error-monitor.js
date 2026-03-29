@@ -11,6 +11,7 @@
 
 import fp from 'fastify-plugin';
 import { exec } from 'child_process';
+import { LimitExceededError } from '../errors/LimitExceededError.js';
 
 const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const seenErrors = new Map(); // key → timestamp
@@ -47,6 +48,18 @@ function buildMessage(err, request) {
 
 async function errorMonitorPlugin(app) {
   app.setErrorHandler((err, request, reply) => {
+    // ── 402 Plan limit exceeded ──────────────────────────────────────
+    if (err instanceof LimitExceededError) {
+      return reply.code(402).send({
+        error: err.message,
+        limitType: err.limitType,
+        current: err.current,
+        max: err.max,
+        upgradeRequired: true,
+        statusCode: 402,
+      });
+    }
+
     const statusCode = err.statusCode || 500;
 
     if (statusCode >= 500) {

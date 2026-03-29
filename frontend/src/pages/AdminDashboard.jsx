@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../store/useAppStore.js';
 import { adminApi } from '../api/admin.js';
+import AuditLog from '../components/admin/AuditLog.jsx';
 
 function StatCard({ label, value, sub }) {
   return (
@@ -38,6 +39,7 @@ export default function AdminDashboard() {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview');
 
   // Guard: redirect if not superadmin
   useEffect(() => {
@@ -84,7 +86,7 @@ export default function AdminDashboard() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-4">
         <div className="text-2xl">🛡️</div>
         <div>
           <h1 className="text-xl font-bold text-text-primary">Admin Panel</h1>
@@ -96,6 +98,32 @@ export default function AdminDashboard() {
           </span>
         </div>
       </div>
+
+      {/* Tab navigation */}
+      <div className="flex gap-1 border-b border-border-subtle mb-6">
+        {[
+          { id: 'overview', label: '📊 Overview' },
+          { id: 'audit', label: '🔍 Audit Log' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === tab.id
+                ? 'text-accent-blue border-b-2 border-accent-blue -mb-px bg-accent-blue/5'
+                : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Audit Log Tab */}
+      {activeTab === 'audit' && <AuditLog />}
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && <>
 
       {/* Stats Grid */}
       <SectionHeader title="Platform Overview" />
@@ -227,6 +255,8 @@ export default function AdminDashboard() {
       <div className="mt-6 text-xs text-text-muted text-center">
         Computed at {metrics?.computed_at ? new Date(metrics.computed_at).toLocaleString('el-GR') : '—'}
       </div>
+
+      </>} {/* end overview tab */}
     </div>
   );
 }

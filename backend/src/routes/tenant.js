@@ -12,6 +12,7 @@
 
 import db from '../config/database.js';
 import { logAction } from '../services/audit.js';
+import { getUsageStats, getCurrentTenantId } from '../services/usage.js';
 
 /**
  * requireAdmin — preHandler that allows tenant admins OR superadmins.
@@ -31,6 +32,14 @@ export default async function tenantRoutes(fastify) {
     onRequest: [fastify.authenticate],
     preHandler: [requireAdmin],
   };
+
+  // ── GET /api/tenant/usage ───────────────────────────────────────────
+  // Returns current usage vs plan limits. Requires authentication (any role).
+  fastify.get('/usage', { onRequest: [fastify.authenticate] }, async (req, reply) => {
+    const tenantId = getCurrentTenantId();
+    const stats = await getUsageStats(tenantId);
+    reply.send({ data: stats });
+  });
 
   // ── GET /api/tenant/export ──────────────────────────────────────────
   // Full GDPR data export for the tenant as a JSON download.
