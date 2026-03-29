@@ -1,8 +1,8 @@
 # OpenAdeia — Current Sprint
 
-**Sprint:** 2026-03-29 (Sprint 1)  
-**Goal:** Frontend performance + Admin fixes + Feature flags  
-**Status:** ✅ COMPLETE — Deployed 2026-03-29 20:12
+**Sprint:** 2026-03-29 (Sprint 2)  
+**Goal:** Email templates + Billing tests + Frontend refactor  
+**Status:** ✅ COMPLETE — Deployed 2026-03-29 20:30
 
 ---
 
@@ -10,68 +10,72 @@
 
 | ID | Task | Builder | Status | Commit |
 |----|------|---------|--------|--------|
-| C01 | Feature flag system (useFeature hook) | `openadeia-feature-flags` | ✅ DONE | `417f2d8` |
-| C02 | Admin /api/admin/tenants real DB query | `openadeia-admin-fix` | ✅ DONE | `3aa2fc8` |
-| C03 | Frontend lazy loading | `openadeia-lazy-routes` | ✅ DONE | `4160672` |
+| H01 | Email templates (welcome, reset, verify) | `openadeia-email-templates` | ✅ DONE | `8ce2ec8` |
+| H03 | Integration tests for billing routes | `openadeia-billing-tests` | ✅ DONE | `8dfad0c` |
+| M01 | Split ProjectDetail.jsx into tab components | `openadeia-refactor-tabs` | ✅ DONE | `742d8d5` |
 
 ---
 
 ## Task Details
 
-### C01: Feature Flag System
+### H01: Email Templates
 
 **Scope:**
-- Create `useFeature(flag)` hook that checks user's feature array
-- Create `<FeatureRoute>` guard component
-- Update Sidebar to conditionally show NOK, Portal, TEE based on features
-- User object must include `features: string[]` from backend
+- Create HTML email templates for: welcome, password reset, email verification
+- Greek text, responsive design, OpenAdeia branding
+- Create email template service to render templates with variables
 
 **Files:**
-- `frontend/src/hooks/useFeature.js` (new)
-- `frontend/src/components/guards/FeatureRoute.jsx` (new)
-- `frontend/src/components/layout/Sidebar.jsx` (modify)
-- `frontend/src/api/index.js` (extend user type)
+- `backend/src/templates/welcome.html` (new)
+- `backend/src/templates/reset-password.html` (new)
+- `backend/src/templates/verify-email.html` (new)
+- `backend/src/services/email-templates.js` (new)
 
 **Acceptance:**
-- [ ] `useFeature('tee')` returns true/false based on user.features
-- [ ] Routes wrapped in FeatureRoute redirect if feature disabled
-- [ ] Sidebar hides TEE/Portal/NOK when not in features array
-- [ ] Tests pass
+- [ ] Templates render with dynamic variables (name, link, etc.)
+- [ ] Responsive design (mobile-friendly)
+- [ ] Greek text throughout
+- [ ] Service exports render functions for each template
 
 ---
 
-### C02: Admin Tenants Real Query
+### H03: Billing Integration Tests
 
 **Scope:**
-- `/api/admin/tenants` currently returns hardcoded `{id: 'default'}` 
-- Change to query actual `tenants` table with counts
+- Add comprehensive tests for billing routes
+- Test Stripe webhook handling
+- Mock Stripe API calls
 
 **Files:**
-- `backend/src/routes/admin.js` (modify)
+- `backend/test/routes/billing.test.js` (enhance existing)
 
 **Acceptance:**
-- [ ] GET /api/admin/tenants returns real tenant rows from DB
-- [ ] Each tenant includes project_count, user_count, storage_used
-- [ ] Tests pass (add/update test in admin.test.js)
+- [ ] Test checkout session creation
+- [ ] Test portal session creation
+- [ ] Test webhook event handling (checkout.completed, subscription.updated, etc.)
+- [ ] All tests pass
 
 ---
 
-### C03: Frontend Lazy Loading
+### M01: Split ProjectDetail.jsx
 
 **Scope:**
-- Wrap route components in React.lazy()
-- Add Suspense fallback
-- Reduces initial bundle size
+- Extract tab components from monolithic ProjectDetail
+- Create separate files for each tab
+- Improve maintainability
 
 **Files:**
-- `frontend/src/App.jsx` (modify)
-- `frontend/src/components/common/PageLoader.jsx` (new, optional)
+- `frontend/src/pages/ProjectDetail.jsx` (simplify)
+- `frontend/src/components/projects/tabs/OverviewTab.jsx` (new)
+- `frontend/src/components/projects/tabs/TimelineTab.jsx` (new)
+- `frontend/src/components/projects/tabs/DocumentsTab.jsx` (new)
+- `frontend/src/components/projects/tabs/EmailTab.jsx` (new)
 
 **Acceptance:**
-- [ ] Dashboard, ProjectDetail, AdminDashboard are lazy-loaded
-- [ ] Network tab shows separate chunks on navigation
-- [ ] No flash of unstyled content
-- [ ] Tests pass, build succeeds
+- [ ] Each tab is a separate component
+- [ ] ProjectDetail orchestrates tabs only
+- [ ] No functionality changes
+- [ ] Build succeeds
 
 ---
 

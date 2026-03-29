@@ -36,16 +36,16 @@
 
 | ID | Task | Est. | Status | Owner | Files |
 |----|------|------|--------|-------|-------|
-| H01 | Email templates (welcome, reset, verify) with Greek text | 3h | TODO | - | `backend/src/templates/*.html`, `backend/src/services/email-templates.js` |
+| H01 | Email templates (welcome, reset, verify) with Greek text | 3h | DONE | Sprint 2 | `backend/src/templates/*.html`, `backend/src/services/email-templates.js` |
 | H02 | Subdomain routing (tenant.openadeia.gr) | 4h | TODO | - | `backend/src/hooks/tenant.js`, nginx config |
-| H03 | Integration tests for billing routes | 2h | TODO | - | `backend/test/routes/billing.test.js` |
+| H03 | Integration tests for billing routes | 2h | DONE | Sprint 2 | `backend/test/routes/billing.test.js` |
 | H04 | Stripe webhook raw body handler verification | 1h | DONE | backend-v2 | `backend/src/app.js` |
 
 ### 🟢 MEDIUM
 
 | ID | Task | Est. | Status | Owner | Files |
 |----|------|------|--------|-------|-------|
-| M01 | Split ProjectDetail.jsx into tab components | 3h | TODO | - | `frontend/src/pages/ProjectDetail.jsx`, `frontend/src/components/projects/tabs/*` |
+| M01 | Split ProjectDetail.jsx into tab components | 3h | DONE | Sprint 2 | `frontend/src/pages/ProjectDetail.jsx`, `frontend/src/components/projects/tabs/*` |
 | M02 | Split api/projects.js into domain files | 2h | TODO | - | `frontend/src/api/*.js` |
 | M03 | Demo data seeder with realistic Greek data | 2h | TODO | - | `backend/src/services/demo-seeder.js` |
 | M04 | UsageBar collapsed mode polish | 1h | TODO | - | `frontend/src/components/usage/UsageBar.jsx` |
