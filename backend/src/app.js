@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
+import rawBody from 'fastify-raw-body';
 
 import errorMonitor from './plugins/error-monitor.js';
 import tenantHookPlugin from './hooks/tenant.js';
@@ -92,6 +93,15 @@ export async function buildApp(opts = {}) {
   await app.register(portalRoutes, { prefix: '/api/portal' });
   await app.register(adminRoute, { prefix: '/api/admin' });
   await app.register(tenantRoutes, { prefix: '/api/tenant' });
+
+  // ── Raw body (needed for Stripe webhook signature verification) ─────
+  // Must be registered before billing routes so req.rawBody is available.
+  await app.register(rawBody, {
+    field: 'rawBody',
+    global: false,   // only expose rawBody on routes that opt in via config.rawBody = true
+    encoding: 'utf8',
+    runFirst: true,
+  });
 
   // ── Billing (SaaS only) ──────────────────────────────────────────────
   // Register when SAAS_MODE=true or STRIPE_SECRET_KEY is present.

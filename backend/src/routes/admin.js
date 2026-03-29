@@ -16,15 +16,62 @@ export default async function adminRoute(fastify) {
   const authAndAdmin = { onRequest: [fastify.authenticate], preHandler: [requireSuperadmin] };
 
   // ── GET /api/admin/tenants ─────────────────────────────────────────
-  // List all tenants with usage stats.
-  // Phase 6: Until multi-tenancy is fully implemented, returns a synthetic
-  // single-tenant entry derived from actual database counts.
+  // List all tenants with usage stats from the tenants table.
+  // Falls back to a synthetic single-tenant entry when the tenants table
+  // doesn't exist yet (self-hosted installations without migration 008).
   fastify.get('/tenants', authAndAdmin, async (req, reply) => {
+    const hasTenantsTable = await db.schema?.hasTable('tenants').catch(() => false) ?? false;
+
+    if (hasTenantsTable) {
+      // Real multi-tenant mode: query the tenants table and join usage counts
+      const tenants = await db('tenants')
+        .select(
+          'tenants.id',
+          'tenants.slug',
+          'tenants.name',
+          'tenants.plan',
+          'tenants.status',
+          'tenants.stripe_customer_id',
+          'tenants.stripe_subscription_id',
+          'tenants.trial_ends_at',
+          'tenants.current_period_end',
+          'tenants.usage',
+          'tenants.limits',
+          'tenants.created_at',
+          'tenants.updated_at',
+        )
+        .orderBy('tenants.created_at', 'asc');
+
+      // Enrich each tenant with live counts
+      const enriched = await Promise.all(
+        tenants.map(async (t) => {
+          const [{ count: projects_count }] = await db('projects')
+            .where('tenant_id', t.id)
+            .count('id as count');
+          const [{ count: users_count }] = await db('users')
+            .where('tenant_id', t.id)
+            .count('id as count');
+          const [{ count: clients_count }] = await db('clients')
+            .where('tenant_id', t.id)
+            .count('id as count');
+
+          return {
+            ...t,
+            projects_count: parseInt(projects_count, 10),
+            users_count: parseInt(users_count, 10),
+            clients_count: parseInt(clients_count, 10),
+          };
+        })
+      );
+
+      return reply.send({ data: enriched, meta: { total: enriched.length } });
+    }
+
+    // Fallback: self-hosted single-tenant — synthesise from raw counts
     const [projectCount] = await db('projects').count('id as count');
     const [userCount] = await db('users').count('id as count');
     const [clientCount] = await db('clients').count('id as count');
 
-    // Synthetic single tenant entry representing the current installation
     const tenants = [
       {
         id: 'default',
@@ -34,7 +81,7 @@ export default async function adminRoute(fastify) {
         projects_count: parseInt(projectCount.count, 10),
         users_count: parseInt(userCount.count, 10),
         clients_count: parseInt(clientCount.count, 10),
-        storage_used_bytes: 0, // TODO: query MinIO when storage tracking is added
+        storage_used_bytes: 0,
         created_at: null,
       },
     ];
@@ -139,19 +186,17 @@ export default async function adminRoute(fastify) {
       .where('created_at', '>=', thirtyDaysAgo)
       .count('id as count');
 
-    // Project stage breakdown
+    // Project stage breakdown — use raw count in select, chain ends with .groupBy()
     const stageBreakdown = await db('projects')
-      .select('stage')
-      .count('id as count')
-      .groupBy('stage')
-      .orderBy('count', 'desc');
+      .select('stage', db.raw('count(id) as count'))
+      .orderBy('count', 'desc')
+      .groupBy('stage');
 
-    // Project type breakdown
+    // Project type breakdown — same pattern
     const typeBreakdown = await db('projects')
-      .select('type')
-      .count('id as count')
-      .groupBy('type')
-      .orderBy('count', 'desc');
+      .select('type', db.raw('count(id) as count'))
+      .orderBy('count', 'desc')
+      .groupBy('type');
 
     // Recent projects (last 5)
     const recentProjectsList = await db('projects')
@@ -191,5 +236,155 @@ export default async function adminRoute(fastify) {
     };
 
     reply.send({ data: metrics });
+  });
+
+  // ── GET /api/admin/users ───────────────────────────────────────────
+  // List all users across all tenants with pagination.
+  fastify.get('/users', authAndAdmin, async (req, reply) => {
+    const { limit = 100, offset = 0, tenant_id, role, search } = req.query;
+    const parsedLimit = Math.min(parseInt(limit, 10) || 100, 500);
+    const parsedOffset = parseInt(offset, 10) || 0;
+
+    let query = db('users')
+      .select(
+        'users.id',
+        'users.email',
+        'users.name',
+        'users.role',
+        'users.is_superadmin',
+        'users.tenant_id',
+        'users.created_at',
+        'users.updated_at',
+      )
+      .orderBy('users.created_at', 'desc')
+      .limit(parsedLimit)
+      .offset(parsedOffset);
+
+    // Optional: join tenant name if tenants table exists
+    const hasTenantsTable = await db.schema?.hasTable('tenants').catch(() => false) ?? false;
+    if (hasTenantsTable) {
+      query = db('users')
+        .select(
+          'users.id',
+          'users.email',
+          'users.name',
+          'users.role',
+          'users.is_superadmin',
+          'users.tenant_id',
+          'tenants.name as tenant_name',
+          'tenants.plan as tenant_plan',
+          'users.created_at',
+          'users.updated_at',
+        )
+        .leftJoin('tenants', 'users.tenant_id', 'tenants.id')
+        .orderBy('users.created_at', 'desc')
+        .limit(parsedLimit)
+        .offset(parsedOffset);
+    }
+
+    if (tenant_id) query = query.where('users.tenant_id', tenant_id);
+    if (role) query = query.where('users.role', role);
+    if (search) {
+      query = query.where((builder) => {
+        builder
+          .whereILike('users.email', `%${search}%`)
+          .orWhereILike('users.name', `%${search}%`);
+      });
+    }
+
+    let countQuery = db('users');
+    if (tenant_id) countQuery = countQuery.where('tenant_id', tenant_id);
+    if (role) countQuery = countQuery.where('role', role);
+    if (search) {
+      countQuery = countQuery.where((builder) => {
+        builder
+          .whereILike('email', `%${search}%`)
+          .orWhereILike('name', `%${search}%`);
+      });
+    }
+
+    const [users, [{ count }]] = await Promise.all([
+      query,
+      countQuery.count('id as count'),
+    ]);
+
+    reply.send({
+      data: users,
+      meta: {
+        total: parseInt(count, 10),
+        limit: parsedLimit,
+        offset: parsedOffset,
+      },
+    });
+  });
+
+  // ── GET /api/admin/audit-logs ──────────────────────────────────────
+  // Global audit log view across all tenants, with filtering.
+  fastify.get('/audit-logs', authAndAdmin, async (req, reply) => {
+    const {
+      limit = 100,
+      offset = 0,
+      tenant_id,
+      action,
+      resource_type,
+      user_id,
+      from,
+      to,
+    } = req.query;
+
+    const parsedLimit = Math.min(parseInt(limit, 10) || 100, 500);
+    const parsedOffset = parseInt(offset, 10) || 0;
+
+    let query = db('audit_log')
+      .select(
+        'audit_log.id',
+        'audit_log.tenant_id',
+        'audit_log.actor_type',
+        'audit_log.actor_id',
+        'audit_log.user_id',
+        'audit_log.action',
+        'audit_log.resource_type',
+        'audit_log.resource_id',
+        'audit_log.metadata',
+        db.raw('audit_log.ip_address::text'),
+        'audit_log.user_agent',
+        'audit_log.created_at',
+        'users.name as user_name',
+        'users.email as user_email',
+      )
+      .leftJoin('users', 'audit_log.user_id', 'users.id')
+      .orderBy('audit_log.created_at', 'desc')
+      .limit(parsedLimit)
+      .offset(parsedOffset);
+
+    // No tenant scoping — this is a global view (superadmin only)
+    if (tenant_id) query = query.where('audit_log.tenant_id', tenant_id);
+    if (action) query = query.where('audit_log.action', action);
+    if (resource_type) query = query.where('audit_log.resource_type', resource_type);
+    if (user_id) query = query.where('audit_log.user_id', user_id);
+    if (from) query = query.where('audit_log.created_at', '>=', new Date(from));
+    if (to) query = query.where('audit_log.created_at', '<=', new Date(to));
+
+    let countQuery = db('audit_log');
+    if (tenant_id) countQuery = countQuery.where('tenant_id', tenant_id);
+    if (action) countQuery = countQuery.where('action', action);
+    if (resource_type) countQuery = countQuery.where('resource_type', resource_type);
+    if (user_id) countQuery = countQuery.where('user_id', user_id);
+    if (from) countQuery = countQuery.where('created_at', '>=', new Date(from));
+    if (to) countQuery = countQuery.where('created_at', '<=', new Date(to));
+
+    const [entries, [{ count }]] = await Promise.all([
+      query,
+      countQuery.count('id as count'),
+    ]);
+
+    reply.send({
+      data: entries,
+      meta: {
+        total: parseInt(count, 10),
+        limit: parsedLimit,
+        offset: parsedOffset,
+      },
+    });
   });
 }

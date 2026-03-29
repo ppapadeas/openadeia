@@ -96,21 +96,21 @@ export default async function tenantRoutes(fastify) {
         .orderBy('created_at', 'asc'),
 
       (() => {
+        // Select audit log entries scoped to this tenant, most recent first, up to 10000.
+        // Chain order: select → filter → orderBy → limit (terminal for test mocks)
         let q = db('audit_log')
           .select(
             'id', 'actor_type', 'actor_id', 'user_id', 'action',
             'resource_type', 'resource_id', 'metadata',
             db.raw('ip_address::text'),
             'user_agent', 'created_at'
-          )
-          .orderBy('created_at', 'desc')
-          .limit(10000);
+          );
         if (tenantId) {
           q = q.where('tenant_id', tenantId);
         } else {
           q = q.whereNull('tenant_id');
         }
-        return q;
+        return q.orderBy('created_at', 'desc').limit(10000);
       })(),
     ]);
 
@@ -177,23 +177,34 @@ export default async function tenantRoutes(fastify) {
       userAgent: req.headers['user-agent'],
     });
 
-    // Delete all data — cascade order respects FK constraints
-    // (Most tables reference projects/clients/users with CASCADE, so order matters for base tables)
+    // Delete all data — scoped to the requesting user's tenant.
+    // Cascade order respects FK constraints.
     await db.transaction(async (trx) => {
+      // Helper: scope deletes to the requesting tenant only
+      const scopedDelete = (table) => {
+        const q = trx(table);
+        return tenantId ? q.where('tenant_id', tenantId) : q.whereNull('tenant_id');
+      };
+
       // Child tables first (cascade would handle most, but explicit is safer)
-      await trx('audit_log').delete();
-      await trx('workflow_logs').delete();
-      await trx('emails').delete();
-      await trx('doc_rights').delete();
-      await trx('prev_praxis').delete();
-      await trx('approvals').delete();
-      await trx('documents').delete();
-      await trx('ekdosi').delete();
-      await trx('properties').delete();
-      await trx('projects').delete();
-      await trx('clients').delete();
-      // Delete all non-superadmin users (keep superadmin for system integrity)
-      await trx('users').where('is_superadmin', false).delete();
+      await scopedDelete('audit_log').delete();
+      await scopedDelete('workflow_logs').delete();
+      await scopedDelete('emails').delete();
+      await scopedDelete('doc_rights').delete();
+      await scopedDelete('prev_praxis').delete();
+      await scopedDelete('approvals').delete();
+      await scopedDelete('documents').delete();
+      await scopedDelete('ekdosi').delete();
+      await scopedDelete('properties').delete();
+      await scopedDelete('projects').delete();
+      await scopedDelete('clients').delete();
+      // Delete non-superadmin users belonging to this tenant only
+      const usersQ = trx('users').where('is_superadmin', false);
+      if (tenantId) {
+        await usersQ.where('tenant_id', tenantId).delete();
+      } else {
+        await usersQ.whereNull('tenant_id').delete();
+      }
     });
 
     reply.send({
@@ -231,9 +242,7 @@ export default async function tenantRoutes(fastify) {
         'users.email as user_email',
       )
       .leftJoin('users', 'audit_log.user_id', 'users.id')
-      .orderBy('audit_log.created_at', 'desc')
-      .limit(parsedLimit)
-      .offset(parsedOffset);
+      .orderBy('audit_log.created_at', 'desc');
 
     // Filter by tenant
     if (tenantId) {
@@ -245,6 +254,9 @@ export default async function tenantRoutes(fastify) {
     if (action) query = query.where('audit_log.action', action);
     if (resource_type) query = query.where('audit_log.resource_type', resource_type);
     if (user_id) query = query.where('audit_log.user_id', user_id);
+
+    // Apply pagination last so all filters are in place first
+    query = query.limit(parsedLimit).offset(parsedOffset);
 
     // Count query with same tenant filter
     let countQuery = db('audit_log');

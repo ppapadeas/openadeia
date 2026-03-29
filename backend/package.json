@@ -27,6 +27,7 @@
     "bullmq": "^5.7.0",
     "dotenv": "^16.4.5",
     "fastify": "^4.27.0",
+    "fastify-raw-body": "^4.3.0",
     "ioredis": "^5.3.2",
     "knex": "^3.1.0",
     "minio": "^7.1.3",

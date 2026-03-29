@@ -18,28 +18,32 @@ export async function up(knex) {
   });
 
   // ── Create first superadmin user if not exists ───────────────────
-  const existing = await knex('users').where({ email: 'pierros@papadeas.gr' }).first();
+  const superadminEmail = process.env.SUPERADMIN_EMAIL || 'admin@openadeia.gr';
+
+  const existing = await knex('users').where({ email: superadminEmail }).first();
 
   if (!existing) {
     // Use a secure default password — must be changed on first login
     const password_hash = await bcrypt.hash('ChangeMe2026!', 12);
     await knex('users').insert({
-      email: 'pierros@papadeas.gr',
-      name: 'Pierros Papadeas',
+      email: superadminEmail,
+      name: 'Platform Admin',
       role: 'admin',
       is_superadmin: true,
       password_hash,
     });
-    console.log('[007_superadmin] Created superadmin user: pierros@papadeas.gr');
+    console.log(`[007_superadmin] Created superadmin user: ${superadminEmail}`);
   } else {
     // Elevate existing user to superadmin
-    await knex('users').where({ email: 'pierros@papadeas.gr' }).update({ is_superadmin: true });
-    console.log('[007_superadmin] Elevated pierros@papadeas.gr to superadmin');
+    await knex('users').where({ email: superadminEmail }).update({ is_superadmin: true });
+    console.log(`[007_superadmin] Elevated ${superadminEmail} to superadmin`);
   }
 }
 
 export async function down(knex) {
-  await knex('users').where({ email: 'pierros@papadeas.gr' }).update({ is_superadmin: false });
+  const superadminEmail = process.env.SUPERADMIN_EMAIL || 'admin@openadeia.gr';
+
+  await knex('users').where({ email: superadminEmail }).update({ is_superadmin: false });
 
   await knex.schema.alterTable('users', (t) => {
     t.dropColumn('is_superadmin');
