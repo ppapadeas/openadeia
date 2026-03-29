@@ -46,9 +46,10 @@ export default async function tenantRoutes(fastify) {
   // Includes: projects, clients, documents metadata, users, audit_log (last 10000).
   fastify.get('/export', adminAuth, async (req, reply) => {
     const userId = req.user.id;
+    const tenantId = req.user?.tenant_id || null;
 
     // Log the export action
-    await logAction(null, {
+    await logAction(tenantId, {
       actorType: 'user',
       actorId: req.user.email || userId,
       userId,
@@ -93,16 +94,23 @@ export default async function tenantRoutes(fastify) {
         .select('id', 'email', 'name', 'role', 'amh', 'is_superadmin', 'created_at')
         .orderBy('created_at', 'asc'),
 
-      db('audit_log')
-        .select(
-          'id', 'actor_type', 'actor_id', 'user_id', 'action',
-          'resource_type', 'resource_id', 'metadata',
-          db.raw('ip_address::text'),
-          'user_agent', 'created_at'
-        )
-        .whereNull('tenant_id') // single-tenant: tenant_id is null
-        .orderBy('created_at', 'desc')
-        .limit(10000),
+      (() => {
+        let q = db('audit_log')
+          .select(
+            'id', 'actor_type', 'actor_id', 'user_id', 'action',
+            'resource_type', 'resource_id', 'metadata',
+            db.raw('ip_address::text'),
+            'user_agent', 'created_at'
+          )
+          .orderBy('created_at', 'desc')
+          .limit(10000);
+        if (tenantId) {
+          q = q.where('tenant_id', tenantId);
+        } else {
+          q = q.whereNull('tenant_id');
+        }
+        return q;
+      })(),
     ]);
 
     const exportData = {
@@ -151,9 +159,10 @@ export default async function tenantRoutes(fastify) {
 
     const userId = req.user.id;
     const userEmail = req.user.email;
+    const tenantId = req.user?.tenant_id || null;
 
     // Log deletion event BEFORE deleting (so it's in the record)
-    await logAction(null, {
+    await logAction(tenantId, {
       actorType: 'user',
       actorId: userEmail || userId,
       userId,
@@ -201,6 +210,9 @@ export default async function tenantRoutes(fastify) {
     const parsedLimit = Math.min(parseInt(limit, 10) || 100, 500);
     const parsedOffset = parseInt(offset, 10) || 0;
 
+    // Scope to the current user's tenant (or null for legacy single-tenant data)
+    const tenantId = req.user?.tenant_id || null;
+
     let query = db('audit_log')
       .select(
         'audit_log.id',
@@ -218,18 +230,32 @@ export default async function tenantRoutes(fastify) {
         'users.email as user_email',
       )
       .leftJoin('users', 'audit_log.user_id', 'users.id')
-      .whereNull('audit_log.tenant_id')
       .orderBy('audit_log.created_at', 'desc')
       .limit(parsedLimit)
       .offset(parsedOffset);
+
+    // Filter by tenant
+    if (tenantId) {
+      query = query.where('audit_log.tenant_id', tenantId);
+    } else {
+      query = query.whereNull('audit_log.tenant_id');
+    }
 
     if (action) query = query.where('audit_log.action', action);
     if (resource_type) query = query.where('audit_log.resource_type', resource_type);
     if (user_id) query = query.where('audit_log.user_id', user_id);
 
+    // Count query with same tenant filter
+    let countQuery = db('audit_log');
+    if (tenantId) {
+      countQuery = countQuery.where('tenant_id', tenantId);
+    } else {
+      countQuery = countQuery.whereNull('tenant_id');
+    }
+
     const [entries, [{ count }]] = await Promise.all([
       query,
-      db('audit_log').whereNull('tenant_id').count('id as count'),
+      countQuery.count('id as count'),
     ]);
 
     reply.send({
