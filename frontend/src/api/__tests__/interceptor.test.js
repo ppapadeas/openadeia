@@ -12,8 +12,7 @@ import MockAdapter from 'axios-mock-adapter';
 
 // We import the actual axios instance from our api module
 // Since the module sets up interceptors on import, we need it loaded fresh
-let api;
-let mockAxios;
+// api and mockAxios are imported fresh inside each test via dynamic import
 
 // Stub browser globals
 const localStorageMock = (() => {

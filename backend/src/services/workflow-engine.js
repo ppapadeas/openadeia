@@ -33,6 +33,7 @@ export async function advanceStage(projectId, userId) {
     });
     await trx('workflow_logs').insert({
       project_id: projectId,
+      tenant_id: project.tenant_id,
       action: `Μετάβαση σταδίου: ${project.stage} → ${nextStage}`,
       from_stage: project.stage,
       to_stage: nextStage,
@@ -105,6 +106,7 @@ export async function rejectToStage(projectId, targetStage, reason, userId) {
     });
     await trx('workflow_logs').insert({
       project_id: projectId,
+      tenant_id: project.tenant_id,
       action: `Απόρριψη: ${project.stage} → ${targetStage}`,
       from_stage: project.stage,
       to_stage: targetStage,

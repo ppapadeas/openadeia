@@ -20,7 +20,7 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const SKIP_PREFIXES = ['/api/auth/', '/health'];
 
 // Map HTTP method + status to an action verb
-function inferAction(method, status, url) {
+function inferAction(method, status, _url) {
   if (method === 'DELETE') return 'resource.deleted';
   if (method === 'POST') {
     if (status === 201) return 'resource.created';

@@ -171,7 +171,7 @@ describe('ΠΔ 696/74 — installation surcharge for cat. IV+', () => {
     // fee_cat4 should be notably higher than fee_cat3 (both β change AND 20% surcharge)
     expect(r4.SA).toBeGreaterThan(r3.SA);
     // Verify: r4 fee = r3_noSurcharge × ... × 1.20 approximately
-    const r4nosurcharge = calculateFees({ areas: { A1: 100 }, difficulty: 3, studies: { EP3: true } });
+    calculateFees({ areas: { A1: 100 }, difficulty: 3, studies: { EP3: true } });
     const ep3_r4 = r4.breakdown.studies.EP3;
     expect(ep3_r4.surcharge).toBe(1.20);
   });

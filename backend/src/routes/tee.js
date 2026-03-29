@@ -55,7 +55,6 @@ export default async function teeRoute(fastify) {
     updateJob(job.id, { status: 'running' });
 
     // Fire-and-forget — the heavy Playwright work runs in background
-    const userId = req.user.id;
     const logger = req.log;
     (async () => {
       try {
@@ -169,6 +168,7 @@ export default async function teeRoute(fastify) {
         tee_submission_date: app.tee_submission_date || null,
         notes: `Εισήχθη από ΤΕΕ e-Adeies (${new Date().toLocaleDateString('el-GR')})`,
         created_by: req.user.id,
+        tenant_id: req.tenantId,
       }).returning('*');
 
       // Create property record if address available
@@ -184,6 +184,7 @@ export default async function teeRoute(fastify) {
       // Log the import
       await db('workflow_logs').insert({
         project_id: project.id,
+        tenant_id: req.tenantId,
         action: `Εισαγωγή από ΤΕΕ e-Adeies (κωδ. ${app.tee_permit_code})`,
         to_stage: stage,
         user_id: req.user.id,
@@ -260,6 +261,7 @@ export default async function teeRoute(fastify) {
       await trx('projects').where({ id: req.params.id }).update(updates);
       await trx('workflow_logs').insert({
         project_id: req.params.id,
+        tenant_id: req.tenantId,
         action: `Υποβολή XML στο ΤΕΕ e-Adeies${result.tee_permit_code ? ` (κωδ. ${result.tee_permit_code})` : ''}`,
         from_stage: 'submission',
         to_stage: 'review',
@@ -311,6 +313,7 @@ export default async function teeRoute(fastify) {
         });
         await db('workflow_logs').insert({
           project_id: project.id,
+          tenant_id: req.tenantId,
           action: `Ενημέρωση κατάστασης από ΤΕΕ: ${details.tee_status}`,
           from_stage: project.stage,
           to_stage: newStage,

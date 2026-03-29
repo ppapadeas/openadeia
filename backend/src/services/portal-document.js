@@ -8,7 +8,6 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { randomUUID } from 'crypto';
-import { Readable } from 'stream';
 import db from '../config/database.js';
 import minioClient from '../config/minio.js';
 import { t } from './portal-translations.js';

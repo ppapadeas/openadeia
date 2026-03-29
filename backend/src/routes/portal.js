@@ -6,7 +6,6 @@ import {
   generateFeeAgreementPdf,
   embedSignatureInDoc,
   getDocDownloadUrl,
-  ensurePortalDocsBucket,
 } from '../services/portal-document.js';
 import {
   sendWelcomeEmail,

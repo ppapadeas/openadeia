@@ -161,7 +161,7 @@ function calcBeta(k, m, sigma, lambda) {
  */
 export function calculateFees({
   areas = {}, difficulty = 3, studies = {},
-  ksPercents = {}, lambdaValue = LAMBDA_FROZEN, fpa = 24, isDemolition = false
+  _ksPercents = {}, lambdaValue = LAMBDA_FROZEN, fpa = 24, _isDemolition = false
 }) {
   const lambda = lambdaValue || LAMBDA_FROZEN;
   const category = extractCategory(difficulty);

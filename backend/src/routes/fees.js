@@ -1,5 +1,5 @@
 import db from '../config/database.js';
-import { calculateFees, calcKH, calcTEE, calcEFKA } from '../services/fee-calculator.js';
+import { calculateFees } from '../services/fee-calculator.js';
 
 export default async function feesRoute(fastify) {
 

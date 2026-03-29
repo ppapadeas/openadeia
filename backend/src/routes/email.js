@@ -41,6 +41,7 @@ export default async function emailRoute(fastify) {
 
     await db('workflow_logs').insert({
       project_id: req.params.id,
+      tenant_id: project.tenant_id,
       action: `Email προς ${to}: "${subject}"`,
       metadata: { email_id: email.id },
     });
