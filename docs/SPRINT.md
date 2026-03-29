@@ -1,8 +1,8 @@
 # OpenAdeia — Current Sprint
 
-**Sprint:** 2026-03-29 (Sprint 3)  
-**Goal:** API split + Demo seeder + UsageBar polish  
-**Status:** ✅ COMPLETE — Deployed 2026-03-29 21:48
+**Sprint:** 2026-03-29 (Sprint 4)  
+**Goal:** Subdomain routing + PWA + Theme toggle  
+**Status:** ✅ COMPLETE — Deployed 2026-03-29 22:02
 
 ---
 
@@ -10,68 +10,69 @@
 
 | ID | Task | Builder | Status | Commit |
 |----|------|---------|--------|--------|
-| M02 | Split api/projects.js into domain files | `openadeia-api-split` | ✅ DONE | `e7bcdd0` |
-| M03 | Demo data seeder with realistic Greek data | `openadeia-demo-seeder` | ✅ DONE | `f23c577` |
-| M04 | UsageBar collapsed mode polish | `openadeia-usagebar-polish` | ✅ DONE | `7bd3e10` |
+| H02 | Subdomain routing (tenant.openadeia.gr) | `openadeia-subdomain` | ✅ DONE | `aba0c25` |
+| L02 | PWA manifest + service worker | `openadeia-pwa` | ✅ DONE | `43795f9` |
+| L03 | Dark/light theme toggle | `openadeia-theme` | ✅ DONE | `0d41edd` |
 
 ---
 
 ## Task Details
 
-### M02: API Split
+### H02: Subdomain Routing
 
 **Scope:**
-- Split monolithic `frontend/src/api/projects.js` into domain-specific files
-- Each domain gets its own file with related API calls
+- Extract tenant slug from subdomain (tenant.openadeia.gr)
+- Backend middleware to resolve tenant from subdomain
+- Support for both subdomain and header-based tenant identification
 
 **Files:**
-- `frontend/src/api/projects.js` (keep project-related only)
-- `frontend/src/api/clients.js` (new)
-- `frontend/src/api/auth.js` (new)
-- `frontend/src/api/nok.js` (new)
-- `frontend/src/api/portal.js` (new)
-- `frontend/src/api/tee.js` (new)
-- `frontend/src/api/index.js` (re-export all)
+- `backend/src/hooks/tenant.js` (enhance)
+- `backend/src/middleware/subdomain.js` (new)
 
 **Acceptance:**
-- [ ] Each domain in separate file
-- [ ] Clean re-exports from index.js
-- [ ] Build succeeds
-- [ ] No runtime errors
-
----
-
-### M03: Demo Seeder
-
-**Scope:**
-- Improve demo data seeder with realistic Greek data
-- More diverse sample projects, clients, documents
-
-**Files:**
-- `backend/src/services/demo-seeder.js` (enhance)
-
-**Acceptance:**
-- [ ] 3-5 sample clients with Greek names
-- [ ] 2-3 sample projects with different types/stages
-- [ ] Sample workflow logs
+- [ ] Request to forma.openadeia.gr resolves tenant "forma"
+- [ ] Fallback to X-Tenant-Slug header for localhost dev
 - [ ] Tests pass
 
 ---
 
-### M04: UsageBar Polish
+### L02: PWA Manifest
 
 **Scope:**
-- Improve collapsed mode styling
-- Add tooltips
-- Better mobile responsiveness
+- Add web app manifest for installable PWA
+- Basic service worker for offline caching
+- App icons
 
 **Files:**
-- `frontend/src/components/usage/UsageBar.jsx` (enhance)
+- `frontend/public/manifest.json` (new)
+- `frontend/public/sw.js` (new)
+- `frontend/public/icons/` (new)
+- `frontend/index.html` (add manifest link)
 
 **Acceptance:**
-- [ ] Collapsed mode shows icon + progress ring
-- [ ] Hover shows tooltip with details
-- [ ] Mobile-friendly
+- [ ] App installable on mobile/desktop
+- [ ] Manifest includes name, icons, theme color
+- [ ] Build succeeds
+
+---
+
+### L03: Theme Toggle
+
+**Scope:**
+- Add dark/light theme toggle
+- Persist preference in localStorage
+- System preference detection
+
+**Files:**
+- `frontend/src/store/useThemeStore.js` (new)
+- `frontend/src/components/layout/ThemeToggle.jsx` (new)
+- `frontend/src/components/layout/Header.jsx` (add toggle)
+- `frontend/tailwind.config.js` (ensure dark mode class)
+
+**Acceptance:**
+- [ ] Toggle switches between dark/light
+- [ ] Preference persists across sessions
+- [ ] Respects system preference initially
 - [ ] Build succeeds
 
 ---

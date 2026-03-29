@@ -37,7 +37,7 @@
 | ID | Task | Est. | Status | Owner | Files |
 |----|------|------|--------|-------|-------|
 | H01 | Email templates (welcome, reset, verify) with Greek text | 3h | DONE | Sprint 2 | `backend/src/templates/*.html`, `backend/src/services/email-templates.js` |
-| H02 | Subdomain routing (tenant.openadeia.gr) | 4h | TODO | - | `backend/src/hooks/tenant.js`, nginx config |
+| H02 | Subdomain routing (tenant.openadeia.gr) | 4h | DONE | Sprint 4 | `backend/src/hooks/tenant.js`, `backend/src/middleware/subdomain.js` |
 | H03 | Integration tests for billing routes | 2h | DONE | Sprint 2 | `backend/test/routes/billing.test.js` |
 | H04 | Stripe webhook raw body handler verification | 1h | DONE | backend-v2 | `backend/src/app.js` |
 
@@ -55,8 +55,8 @@
 | ID | Task | Est. | Status | Owner | Files |
 |----|------|------|--------|-------|-------|
 | L01 | Add Storybook for component documentation | 4h | TODO | - | `frontend/.storybook/*` |
-| L02 | PWA manifest + service worker | 3h | TODO | - | `frontend/public/manifest.json` |
-| L03 | Dark/light theme toggle | 2h | TODO | - | `frontend/src/store/theme.js` |
+| L02 | PWA manifest + service worker | 3h | DONE | Sprint 4 | `frontend/public/manifest.json`, `frontend/public/sw.js` |
+| L03 | Dark/light theme toggle | 2h | DONE | Sprint 4 | `frontend/src/store/useThemeStore.js`, `frontend/src/components/layout/ThemeToggle.jsx` |
 
 ---
 
