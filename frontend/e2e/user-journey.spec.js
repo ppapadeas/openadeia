@@ -693,9 +693,9 @@ test.describe('Fee Calculator - Calculations', () => {
     await expect(a1Input).toBeVisible({ timeout: 5_000 });
     await a1Input.fill('120');
 
-    // Navigate to Μελέτες tab and trigger calculation
-    await page.click('button:has-text("Μελέτες")');
-    await expect(page.locator('button:has-text("Υπολογισμός Αμοιβής")')).toBeVisible();
+    // Navigate to Μελέτες calcTab (use "Επόμενο" button to avoid ambiguity with project tabs)
+    await page.click('button:has-text("Επόμενο: Μελέτες")');
+    await expect(page.locator('button:has-text("Υπολογισμός Αμοιβής")')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Υπολογισμός Αμοιβής")');
 
     // Results tab should now be active or navigable
@@ -716,7 +716,8 @@ test.describe('Fee Calculator - Calculations', () => {
     const areaInput200 = page.locator('input[type="number"]').first();
     await expect(areaInput200).toBeVisible({ timeout: 5_000 });
     await areaInput200.fill('200');
-    await page.click('button:has-text("Μελέτες")');
+    await page.click('button:has-text("Επόμενο: Μελέτες")');
+    await expect(page.locator('button:has-text("Υπολογισμός Αμοιβής")')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Υπολογισμός Αμοιβής")');
 
     await expect(page.locator('text=Ανάλυση ανά μελέτη')).toBeVisible({ timeout: 15_000 });
@@ -739,7 +740,8 @@ test.describe('Fee Calculator - Calculations', () => {
 
     // First calc: 100 sqm
     await a1Input.fill('100');
-    await page.click('button:has-text("Μελέτες")');
+    await page.click('button:has-text("Επόμενο: Μελέτες")');
+    await expect(page.locator('button:has-text("Υπολογισμός Αμοιβής")')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Υπολογισμός Αμοιβής")');
     await expect(page.locator('text=Ολική Αμοιβή (με ΦΠΑ)')).toBeVisible({ timeout: 15_000 });
 
@@ -749,7 +751,8 @@ test.describe('Fee Calculator - Calculations', () => {
     // Second calc: 200 sqm (double)
     await page.click('button:has-text("Στοιχεία")');
     await a1Input.fill('200');
-    await page.click('button:has-text("Μελέτες")');
+    await page.click('button:has-text("Επόμενο: Μελέτες")');
+    await expect(page.locator('button:has-text("Υπολογισμός Αμοιβής")')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Υπολογισμός Αμοιβής")');
     await expect(page.locator('text=Ολική Αμοιβή (με ΦΠΑ)')).toBeVisible({ timeout: 15_000 });
 
@@ -770,7 +773,8 @@ test.describe('Fee Calculator - Calculations', () => {
     const fpaInput = page.locator('input[type="number"]').first();
     await expect(fpaInput).toBeVisible({ timeout: 5_000 });
     await fpaInput.fill('150');
-    await page.click('button:has-text("Μελέτες")');
+    await page.click('button:has-text("Επόμενο: Μελέτες")');
+    await expect(page.locator('button:has-text("Υπολογισμός Αμοιβής")')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Υπολογισμός Αμοιβής")');
 
     await expect(page.locator('text=ΦΠΑ 24%')).toBeVisible({ timeout: 15_000 });
