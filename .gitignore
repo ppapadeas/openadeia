@@ -57,3 +57,8 @@ backend/tee-discovery-report-*.json
 *.tmp
 *.bak
 CLAUDE.md
+
+# Playwright
+frontend/e2e-results/
+frontend/test-results/
+frontend/playwright-report/
