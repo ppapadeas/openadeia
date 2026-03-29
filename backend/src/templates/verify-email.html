@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Επαλήθευση Email - OpenAdeia</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f3f4f6;
+      color: #1f2937;
+      line-height: 1.6;
+      padding: 32px 16px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .header {
+      background: #6366f1;
+      padding: 28px 32px;
+      text-align: center;
+    }
+    .header h1 {
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      margin-bottom: 4px;
+    }
+    .header p {
+      color: rgba(255,255,255,0.75);
+      font-size: 13px;
+    }
+    .body {
+      padding: 32px;
+    }
+    .body h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 12px;
+    }
+    .body p {
+      color: #4b5563;
+      font-size: 15px;
+      margin-bottom: 16px;
+    }
+    .icon-block {
+      text-align: center;
+      font-size: 48px;
+      margin: 20px 0 16px 0;
+    }
+    .cta {
+      text-align: center;
+      margin: 28px 0;
+    }
+    .button {
+      display: inline-block;
+      background: #6366f1;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 36px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .footer {
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+      padding: 20px 32px;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>OPENADEIA</h1>
+      <p>Διαχείριση Οικοδομικών Αδειών</p>
+    </div>
+    <div class="body">
+      <div class="icon-block">✉️</div>
+      <h2>Επαλήθευση διεύθυνσης email</h2>
+      <p>Γεια σας, <strong>{{name}}</strong>.</p>
+      <p>Για να ολοκληρωθεί η εγγραφή σας στο <strong>OpenAdeia</strong>, χρειάζεται να επαληθεύσετε τη διεύθυνση email σας.</p>
+      <p>Κάντε κλικ στο παρακάτω κουμπί για να επαληθεύσετε το email σας και να αποκτήσετε πλήρη πρόσβαση στο λογαριασμό σας:</p>
+      <div class="cta">
+        <a href="{{verifyUrl}}" class="button">Επαλήθευση Email</a>
+      </div>
+      <p style="font-size:13px;color:#9ca3af;">Αν δεν δημιουργήσατε εσείς αυτόν τον λογαριασμό, αγνοήστε αυτό το email. Η διεύθυνση δεν θα συνδεθεί με κανέναν λογαριασμό χωρίς επαλήθευση.</p>
+    </div>
+    <div class="footer">
+      OpenAdeia - Διαχείριση Οικοδομικών Αδειών
+    </div>
+  </div>
+</body>
+</html>
