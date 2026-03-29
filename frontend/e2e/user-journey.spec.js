@@ -472,6 +472,7 @@ async function createPortalToken(projectId, authToken) {
     },
     body: JSON.stringify({
       project_id: projectId,
+      status: 'active',
       client_name: 'E2E Test Client',
       client_email: 'e2eclient@example.com',
       client_message: 'Your permit is in progress.',
@@ -638,6 +639,7 @@ test.describe('Client Portal - Extended', () => {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
       body: JSON.stringify({
         project_id: projectId,
+        status: 'active',
         client_name: 'Test Client',
         client_email: 'test@e2e.example.com',
       }),
@@ -675,10 +677,8 @@ test.describe('Fee Calculator - Calculations', () => {
     await expect(page.locator('body')).toContainText('2422');
     await expect(page.locator('body')).toContainText('2013');
 
-    // λ symbol is shown
-    const lambdaCard = page.locator('[class*="font-mono"]').first();
-    await expect(lambdaCard).toBeVisible();
-    await expect(lambdaCard).toContainText('λ');
+    // λ symbol is shown — use text locator to avoid hidden font-mono elements in other tabs
+    await expect(page.locator('text=λ =')).toBeVisible({ timeout: 5_000 });
   });
 
   test('calculates fee with A1 area and shows results page', async ({ page }) => {
@@ -687,9 +687,11 @@ test.describe('Fee Calculator - Calculations', () => {
 
     await page.click('button:has-text("Αμοιβές")');
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
 
     // Fill Κύρια χρήση (A1) — first number input on the areas tab
     const a1Input = page.locator('input[type="number"]').first();
+    await expect(a1Input).toBeVisible({ timeout: 5_000 });
     await a1Input.fill('120');
 
     // Navigate to Μελέτες tab and trigger calculation
@@ -709,9 +711,12 @@ test.describe('Fee Calculator - Calculations', () => {
 
     await page.click('button:has-text("Αμοιβές")');
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
 
     // 200 sqm main area
-    await page.locator('input[type="number"]').first().fill('200');
+    const areaInput200 = page.locator('input[type="number"]').first();
+    await expect(areaInput200).toBeVisible({ timeout: 5_000 });
+    await areaInput200.fill('200');
     await page.click('button:has-text("Μελέτες")');
     await page.click('button:has-text("Υπολογισμός Αμοιβής")');
 
@@ -728,8 +733,10 @@ test.describe('Fee Calculator - Calculations', () => {
 
     await page.click('button:has-text("Αμοιβές")');
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
 
     const a1Input = page.locator('input[type="number"]').first();
+    await expect(a1Input).toBeVisible({ timeout: 5_000 });
 
     // First calc: 100 sqm
     await a1Input.fill('100');
@@ -759,8 +766,11 @@ test.describe('Fee Calculator - Calculations', () => {
 
     await page.click('button:has-text("Αμοιβές")');
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
 
-    await page.locator('input[type="number"]').first().fill('150');
+    const fpaInput = page.locator('input[type="number"]').first();
+    await expect(fpaInput).toBeVisible({ timeout: 5_000 });
+    await fpaInput.fill('150');
     await page.click('button:has-text("Μελέτες")');
     await page.click('button:has-text("Υπολογισμός Αμοιβής")');
 
