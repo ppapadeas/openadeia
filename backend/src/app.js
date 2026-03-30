@@ -63,7 +63,7 @@ export async function buildApp(opts = {}) {
   });
 
   await app.register(rateLimit, {
-    max: 200,
+    max: process.env.NODE_ENV === 'test' ? 10000 : 200,
     timeWindow: '1 minute',
   });
 
