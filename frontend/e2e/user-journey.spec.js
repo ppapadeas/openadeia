@@ -949,8 +949,8 @@ test.describe('Sidebar Routes', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveURL(/\/fees/);
-    // Page title
-    await expect(page.locator('text=Αμοιβολόγιο')).toBeVisible({ timeout: 5_000 });
+    // h1 heading unique on the page (not sidebar link)
+    await expect(page.locator('h1')).toContainText('Αμοιβολόγιο', { timeout: 5_000 });
     // FeeCalculator renders with λ info and A1 input
     await expect(page.locator('text=λ =')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('input[type="number"]').first()).toBeVisible();
@@ -962,15 +962,15 @@ test.describe('Sidebar Routes', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveURL(/\/tee/);
-    // TEE page header
-    await expect(page.locator('text=ΤΕΕ')).toBeVisible({ timeout: 5_000 });
+    // h1 heading unique on the page
+    await expect(page.locator('h1')).toContainText('ΤΕΕ', { timeout: 5_000 });
   });
 
   test('/portal redirects to /projects', async ({ page }) => {
     await login(page);
     await page.goto('/portal');
-    await page.waitForLoadState('networkidle');
-
+    // Wait for the redirect to complete
+    await page.waitForURL(/\/projects/, { timeout: 10_000 });
     await expect(page).toHaveURL(/\/projects/);
   });
 
